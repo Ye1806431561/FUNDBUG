@@ -105,7 +105,7 @@
 
 **指令：**
 1. 定义数据库初始化函数，创建 SQLite 连接
-2. 根据 `architecture.md` 中的表结构，创建以下 5 张表：
+2. 根据 `@architecture.md` 中的表结构，创建以下 5 张表：
    - `funds`: 基金基础信息表
    - `holdings`: 基金持仓表
    - `nav_history`: 历史净值表
