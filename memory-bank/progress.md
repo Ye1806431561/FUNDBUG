@@ -357,10 +357,53 @@ $ wc -l src/data/fund_list.py
 
 ---
 
+## 2026-02-10 - 步骤 2.2: 创建持仓数据获取模块 (src/data/holdings.py) ✅
+
+### 完成内容
+
+1. **创建 `src/data/holdings.py`**：
+    - 实现 `get_fund_holdings(fund_code)`：
+        - 调用 `ak.fund_portfolio_hold_em` 获取持仓数据。
+        - 自动解析“季度”字段（如 `2024年1季度...`）为标准 `YYYY-MM-DD` 格式。
+        - 仅筛选并返回**最新报告期**的数据。
+    - 实现 `save_fund_holdings(fund_code)`：
+        - 获取数据并调用 `crud.insert_holdings` 存入数据库。
+        - 计算并打印“已披露持仓占比”和“未披露/现金占比”。
+
+2. **创建测试 `tests/test_holdings.py`**：
+    - 使用 `unittest.mock` 模拟 AKShare 返回数据，测试解析逻辑、成功获取、空数据处理、异常处理等场景。
+    - 验证 `_parse_report_date` 函数对不同季度格式的解析能力。
+
+### 关键决策
+
+1. **只取最新季度数据** — AKShare 接口可能返回历史所有季度的数据，本系统只关注最新的持仓结构用于估算，因此在获取后立即通过日期筛选只保留最新一期。
+2. **日期自动提取** — 从中文字符串（如“2024年1季度股票投资明细”）中正则提取年份和季度，并映射为具体的季度末日期（03-31, 06-30等），确保存储到数据库的是标准 DATE 类型。
+3. **未披露部分算作现金** — 在验证脚本中明确输出了“未披露/现金”比例，这是后续 NAV 估算的关键假设（未披露部分涨跌幅设为 0%）。
+
+### 验证结果
+
+```bash
+$ PYTHONPATH=. .venv/bin/pytest tests/test_holdings.py -v
+tests/test_holdings.py::test_parse_report_date PASSED                    [ 14%]
+tests/test_holdings.py::test_get_fund_holdings_success PASSED            [ 28%]
+# ... 全部 7 个测试通过 ✅
+
+$ PYTHONPATH=. python verify_step_2_2.py
+--- Verifying Step 2.2 for Fund 000001 ---
+Fetching and saving holdings...
+Fund 000001 (2024-12-31): Found 175 stocks.
+Total disclosed weight: 64.07% (Undisclosed/Cash: 35.93%)
+✅ save_fund_holdings returned True
+✅ Found 175 holdings in DB
+```
+
+---
+
 ## 下一步
 
 - [x] 阶段 1 步骤 1.1: 完善 config.py 配置文件 ✅
 - [x] 阶段 1 步骤 1.2: 创建数据库模型 (src/db/models.py) ✅
 - [x] 阶段 1 步骤 1.3: 创建 CRUD 操作 (src/db/crud.py) ✅
 - [x] 阶段 2 步骤 2.1: 创建基金列表获取模块 (src/data/fund_list.py) ✅
-- [ ] 阶段 2 步骤 2.2: 创建持仓数据获取模块 (src/data/holdings.py)
+- [x] 阶段 2 步骤 2.2: 创建持仓数据获取模块 (src/data/holdings.py) ✅
+- [ ] 阶段 2 步骤 2.3: 创建实时行情获取模块 (src/data/realtime.py)

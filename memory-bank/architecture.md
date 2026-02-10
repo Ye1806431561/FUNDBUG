@@ -125,7 +125,7 @@ CREATE TABLE user_watchlist (
 | 模块 | 文件 | 职责 | 最大行数 |
 |------|------|------|----------|
 | `data/` | `fund_list.py` | 从 AKShare 获取基金列表 | 200 |
-| `data/` | `holdings.py` | 获取基金季报持仓数据 | 200 |
+| `data/` | `holdings.py` | 获取基金季报持仓数据（自动解析最新季度，未披露部分视为现金） | 200 |
 | `data/` | `realtime.py` | 获取股票实时行情 | 200 |
 | `engine/` | `nav_estimator.py` | NAV 估算核心算法 | 200 |
 | `engine/` | `error_correction.py` | 基于历史误差的修正 | 150 |

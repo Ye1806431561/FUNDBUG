@@ -1,16 +1,17 @@
+
 # Task Checklist
 
 - [x] Phase 0: Environment Setup
     - [x] 0.1 Create directory structure & git init
     - [x] 0.2 Create requirements.txt
     - [x] 0.3 Create virtual environment
-- [ ] Phase 1: Database Layer
+- [x] Phase 1: Database Layer
     - [x] 1.1 Create config.py
     - [x] 1.2 Create models.py
     - [x] 1.3 Create CRUD operations (src/db/crud.py)
 - [ ] Phase 2: Data Collection Layer
     - [x] 2.1 Fund list collection
-    - [ ] 2.2 Holdings data collection
+    - [x] 2.2 Holdings data collection
     - [ ] 2.3 Realtime quotes
 - [ ] Phase 3: Calculation Engine
     - [ ] 3.1 NAV Estimator
