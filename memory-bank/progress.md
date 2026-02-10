@@ -262,13 +262,49 @@ $ wc -l src/db/models.py
 
 ---
 
+## 2026-02-10 - 步骤 1.3: 创建 CRUD 操作 (src/db/crud.py) ✅
+
+### 完成内容
+
+1. **实现 `src/db/crud.py`**：
+    - 完整实现了 5 张表的增删改查操作
+    - **Funds**: `insert_fund`, `get_fund`, `get_all_funds`, `update_fund_nav`
+    - **Holdings**: `insert_holdings` (批量), `get_holdings_by_fund`, `get_latest_holdings`
+    - **NAV History**: `insert_nav`, `get_nav_history`, `get_latest_nav`
+    - **NAV Estimates**: `insert_estimate`, `update_actual_nav`, `get_estimate_errors`, `cleanup_old_estimates`
+    - **Watchlist**: `add_to_watchlist`, `remove_from_watchlist`, `get_watchlist`, `is_in_watchlist`
+
+2. **创建测试基础设施**：
+    - `tests/conftest.py`: 定义 `test_db_path` fixture 和自动 patch `get_connection`
+    - `tests/test_db.py`: 覆盖所有 CRUD 函数的单元测试
+
+### 关键决策
+
+1. **依赖注入测试 (Mocking)** — 为了在不污染 `config.DATABASE_PATH` 所指真实数据库的情况下测试，使用了 `unittest.mock.patch` 拦截 `src.db.crud.get_connection`，将其重定向到临时文件数据库。这是确保测试安全性的关键架构模式。
+2. **资源管理 (Resource Management)** — 所有数据库操作均包裹在 `try...finally` 块中，确保连接（Connection）在操作后必定关闭，防止连接泄漏。
+3. **批量写入优化** — `insert_holdings` 使用 `executemany` 进行批量插入，显著提升写入性能。
+4. **幂等性设计 (Idempotency)** — 插入操作广泛使用 `ON CONFLICT DO UPDATE` 或 `DO NOTHING`，允许重复调用而不会报错或产生重复数据。
+
+### 验证结果
+
+```bash
+$ PYTHONPATH=. .venv/bin/pytest tests/test_db.py -v
+tests/test_db.py::test_fund_operations PASSED                            [ 20%]
+tests/test_db.py::test_holdings_operations PASSED                        [ 40%]
+tests/test_db.py::test_nav_history_operations PASSED                     [ 60%]
+tests/test_db.py::test_nav_estimates_cleanup PASSED                      [ 80%]
+tests/test_db.py::test_watchlist_operations PASSED                       [100%]
+```
+
+---
+
 ## 阶段 1 进度
 
 | 步骤 | 内容 | 状态 |
 |------|------|------|
 | 1.1 | 完善 config.py 配置文件 | ✅ |
 | 1.2 | 创建数据库模型 (src/db/models.py) | ✅ |
-| 1.3 | 创建 CRUD 操作 (src/db/crud.py) | ⬜ |
+| 1.3 | 创建 CRUD 操作 (src/db/crud.py) | ✅ |
 
 ---
 
@@ -276,4 +312,5 @@ $ wc -l src/db/models.py
 
 - [x] 阶段 1 步骤 1.1: 完善 config.py 配置文件 ✅
 - [x] 阶段 1 步骤 1.2: 创建数据库模型 (src/db/models.py) ✅
-- [ ] 阶段 1 步骤 1.3: 创建 CRUD 操作 (src/db/crud.py)
+- [x] 阶段 1 步骤 1.3: 创建 CRUD 操作 (src/db/crud.py) ✅
+- [ ] 阶段 2 步骤 2.1: 创建基金列表获取模块 (src/data/fund_list.py)

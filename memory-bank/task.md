@@ -1,0 +1,31 @@
+# Task Checklist
+
+- [x] Phase 0: Environment Setup
+    - [x] 0.1 Create directory structure & git init
+    - [x] 0.2 Create requirements.txt
+    - [x] 0.3 Create virtual environment
+- [ ] Phase 1: Database Layer
+    - [x] 1.1 Create config.py
+    - [x] 1.2 Create models.py
+    - [x] 1.3 Create CRUD operations (src/db/crud.py)
+- [ ] Phase 2: Data Collection Layer
+    - [ ] 2.1 Fund list collection
+    - [ ] 2.2 Holdings data collection
+    - [ ] 2.3 Realtime quotes
+- [ ] Phase 3: Calculation Engine
+    - [ ] 3.1 NAV Estimator
+    - [ ] 3.2 Error Correction
+- [ ] Phase 4: API Layer
+    - [ ] 4.1 Schemas
+    - [ ] 4.2 Routes
+- [ ] Phase 5: Main App & Scheduler
+    - [ ] 5.1 Main entry point
+    - [ ] 5.2 Test infrastructure
+- [ ] Phase 6: Frontend
+    - [ ] 6.1 HTML
+    - [ ] 6.2 JS
+    - [ ] 6.3 CSS
+- [ ] Phase 7: Integration & Verification
+    - [ ] 7.1 E2E Verification
+    - [ ] 7.2 Cleanup Verification
+    - [ ] 7.3 Code Quality Check

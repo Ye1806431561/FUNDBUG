@@ -17,4 +17,6 @@ data/fundbug.db
 
 # Testing
 .pytest_cache/
-htmlcov/
+
+# Local History
+.history/

@@ -212,6 +212,25 @@ CREATE TABLE user_watchlist (
 
 ---
 
+---
+
+## 测试架构
+
+> 采用 `pytest` + `unittest.mock` 进行单元测试和集成测试。
+
+### 核心机制
+
+1. **数据库隔离**：
+    - 为了避免测试污染开发环境数据库 (`data/fundbug.db`)，测试使用 **临时文件数据库** (`tempfile.mkstemp`)。
+    - **Dependency Injection**: 通过 `tests/conftest.py` 中的 `mock_db_connection` fixture，使用 `unittest.mock.patch` 自动拦截 `src.db.crud` 中的 `get_connection` 调用，将其重定向到临时数据库。
+    - 这种方式允许 `crud.py` 代码保持原样（导入生产环境配置），但在测试运行时自动切换上下文。
+
+2. **Fixture 管理**：
+    - `test_db_path`: 创建并初始化临时数据库 schema，测试结束后自动清理文件。
+    - `mock_db_connection`: `autouse=True`，自动应用于所有测试，无需手动装饰。
+
+---
+
 ## 依赖架构
 
 > 每个依赖在系统中扮演明确角色，禁止引入职责重叠的替代库。
