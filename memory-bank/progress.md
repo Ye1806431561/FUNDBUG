@@ -308,9 +308,59 @@ tests/test_db.py::test_watchlist_operations PASSED                       [100%]
 
 ---
 
+
+## 2026-02-10 - 步骤 2.1: 创建基金列表获取模块 (src/data/fund_list.py) ✅
+
+### 完成内容
+
+1.  **创建 `src/data/fund_list.py`**：
+    -   实现 `get_fund_info(fund_code)`:
+        -   使用 `ak.fund_individual_basic_info_xq` 获取基金名称和类型（如“混合型-偏股”）。
+        -   使用 `ak.fund_open_fund_info_em` 获取最新单位净值和净值日期。
+    -   实现 `validate_fund_code(fund_code)`: 校验 6 位数字格式并调用 `get_fund_info` 确认存在。
+    -   实现 `save_fund_info(fund_code)`: 获取信息并调用 `crud.insert_fund` 保存至数据库。
+    -   **实现重试机制**：使用 `@retry_on_failure` 装饰器处理网络波动。
+
+2.  **创建 `src/utils/helpers.py`**：
+    -   实现 `@retry_on_failure` 装饰器，为网络请求提供重试机制（默认重试 3 次，间隔 1 秒）。
+    -   将其应用于 `get_fund_info` 的内部实现 `_fetch_fund_info_impl`，增强稳定性。
+
+3.  **创建测试 `tests/test_data.py`**：
+    -   覆盖正常获取、网络异常重试、无效代码校验等场景。
+    -   验证重试机制正确工作（模拟前 2 次失败，第 3 次成功）。
+
+### 关键决策
+
+1.  **分步获取信息** — AKShare 没有单一接口同时返回“基金类型”和“最新净值”，因此组合使用了两个接口。
+2.  **重试装饰器** — 将重试逻辑抽离到 `src/utils/helpers.py`，保持业务代码整洁，方便后续复用于其他数据获取模块。
+3.  **异常处理策略** — `get_fund_info` 内部捕获最终异常并返回 `None`，调用方（如 `save_fund_info`）据此判断失败，避免程序崩溃。
+
+### 验证结果
+
+```bash
+$ PYTHONPATH=. .venv/bin/pytest tests/test_data.py -v
+tests/test_data.py::test_get_fund_info_retry_success PASSED              [ 12%]
+tests/test_data.py::test_get_fund_info_success PASSED                    [ 25%]
+# ... 全部 8 个测试通过 ✅
+
+$ python verify_step_2_1.py
+--- 验证 1: 已知基金代码 (000001) ---
+✅ 获取成功: {'fund_code': '000001', 'fund_name': '华夏成长混合', ...}
+✅ 基金名称正确
+
+--- 验证 2: 无效基金代码 (999999) ---
+✅ 返回 None (符合预期)
+
+$ wc -l src/data/fund_list.py
+89 src/data/fund_list.py  ✅ (上限 200 行)
+```
+
+---
+
 ## 下一步
 
 - [x] 阶段 1 步骤 1.1: 完善 config.py 配置文件 ✅
 - [x] 阶段 1 步骤 1.2: 创建数据库模型 (src/db/models.py) ✅
 - [x] 阶段 1 步骤 1.3: 创建 CRUD 操作 (src/db/crud.py) ✅
-- [ ] 阶段 2 步骤 2.1: 创建基金列表获取模块 (src/data/fund_list.py)
+- [x] 阶段 2 步骤 2.1: 创建基金列表获取模块 (src/data/fund_list.py) ✅
+- [ ] 阶段 2 步骤 2.2: 创建持仓数据获取模块 (src/data/holdings.py)

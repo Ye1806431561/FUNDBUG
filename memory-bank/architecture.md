@@ -173,7 +173,7 @@ CREATE TABLE user_watchlist (
 | 路径 | 用途 | 依赖关系 |
 |------|------|----------|
 | `src/__init__.py` | 包标识文件 | 无 |
-| `src/data/fund_list.py` | 从 AKShare 获取基金列表和信息 | → `src/db/crud.py` |
+| `src/data/fund_list.py` | 从 AKShare 获取基金列表和信息 (组合查询+重试) | → `src/db/crud.py`, `src/utils/helpers.py` |
 | `src/data/holdings.py` | 获取基金季报持仓数据 | → `src/db/crud.py` |
 | `src/data/realtime.py` | 获取股票实时行情（含缓存） | 无 |
 | `src/engine/nav_estimator.py` | NAV 估算核心算法 | → `src/data/realtime.py`, `src/db/crud.py` |
@@ -182,7 +182,7 @@ CREATE TABLE user_watchlist (
 | `src/db/crud.py` | 数据库 CRUD 操作封装 | ← `src/db/models.py` |
 | `src/api/schemas.py` | Pydantic 请求/响应模型 | 无 |
 | `src/api/routes.py` | FastAPI 路由定义 | → `src/db/crud.py`, `src/engine/*` |
-| `src/utils/helpers.py` | 通用辅助函数 | 无 |
+| `src/utils/helpers.py` | 通用辅助函数（如 retry_on_failure） | 无 |
 
 ### 其他目录
 

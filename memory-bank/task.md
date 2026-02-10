@@ -9,7 +9,7 @@
     - [x] 1.2 Create models.py
     - [x] 1.3 Create CRUD operations (src/db/crud.py)
 - [ ] Phase 2: Data Collection Layer
-    - [ ] 2.1 Fund list collection
+    - [x] 2.1 Fund list collection
     - [ ] 2.2 Holdings data collection
     - [ ] 2.3 Realtime quotes
 - [ ] Phase 3: Calculation Engine
