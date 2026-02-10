@@ -542,3 +542,81 @@ $ PYTHONPATH=. .venv/bin/python verify_step_3_1.py
 - `estimate_fund_nav` 依赖 `crud.get_fund()` 返回的 `latest_nav`，因此在估算前，必须确保基金已通过 `fund_list.save_fund_info()` 入库且包含有效净值。
 - `_calculate_weighted_return` 是纯函数，可独立用于单元测试，无需 Mock 任何外部依赖。
 - 步骤 3.2（误差修正）将在 `estimate_fund_nav` 输出的基础上应用 EWA 修正，修正后重新覆盖 `estimated_nav`。
+
+---
+
+## 2026-02-10 - 步骤 3.2: 创建误差修正模块 (src/engine/error_correction.py) ✅
+
+### 完成内容
+
+1. **创建 `src/engine/error_correction.py`**（103 行）：
+    - 实现 `calculate_ewa_bias(fund_code, alpha, limit)`：从数据库获取历史误差记录，按时间正序逐步累加 EWA，计算系统性偏差值（百分比）。
+    - 实现 `apply_correction(estimated_nav, ewa_bias)`：纯函数，修正后净值 = `estimated_nav × (1 - ewa_bias / 100)`。
+    - 实现 `correct_fund_estimate(fund_code, estimated_nav, estimated_return)`：完整修正流程——计算 EWA → 修正净值 → 修正涨跌幅 → 返回结果字典。
+    - 实现 `update_actual_and_errors(fund_code, actual_nav, nav_date)`：封装 `crud.update_actual_nav`，供定时任务在收盘后回填实际净值。
+
+2. **追加测试到 `tests/test_engine.py`**（新增 6 个测试，共 16 个）：
+    - **EWA 计算**：正常 3 条误差序列、单条误差权重验证、无历史数据边界。
+    - **修正流程**：`apply_correction` 纯函数、完整修正流程、无偏差时返回原始值。
+
+3. **创建验证脚本 `verify_step_3_2.py`**：
+    - 验证 EWA 数学正确性（手算 [1.0, 2.0, -1.0] 序列）。
+    - 验证修正函数（正偏差向下修正、零偏差不变、负偏差向上修正）。
+    - 验证文件行数合规。
+
+### 关键决策
+
+1. **EWA 初始值为 0** — 无历史数据时偏差为 0，不影响首次估算。首条误差进入后，EWA 立即反映 `α × error`，逐步积累。
+2. **按时间正序计算** — `crud.get_estimate_errors` 返回 DESC 排列，代码中 `reverse()` 为正序后再逐步累加，确保最近误差权重最高。
+3. **修正涨跌幅同步调整** — `corrected_return = estimated_return - ewa_bias`，与净值修正保持一致。
+4. **`apply_correction` 为纯函数** — 与 `_calculate_weighted_return` 同理，无副作用、易测试，遵循 SRP 原则。
+
+### 核心算法公式
+
+```
+EWA_t = α × error_t + (1-α) × EWA_{t-1}
+修正后净值 = 原始估算净值 × (1 - EWA偏差 / 100)
+修正后涨跌幅 = 原始涨跌幅 - EWA偏差
+```
+
+### 验证结果
+
+```bash
+$ PYTHONPATH=. .venv/bin/pytest tests/test_engine.py -v
+tests/test_engine.py::TestErrorCorrection::test_ewa_calculation PASSED   [ 68%]
+tests/test_engine.py::TestErrorCorrection::test_ewa_with_alpha_weight PASSED [ 75%]
+tests/test_engine.py::TestErrorCorrection::test_ewa_no_history PASSED    [ 81%]
+tests/test_engine.py::TestErrorCorrection::test_apply_correction PASSED  [ 87%]
+tests/test_engine.py::TestErrorCorrection::test_correct_fund_estimate_success PASSED [ 93%]
+tests/test_engine.py::TestErrorCorrection::test_correct_fund_estimate_no_bias PASSED [100%]
+# 全部 16 个测试通过 ✅
+
+$ PYTHONPATH=. .venv/bin/pytest tests/ -v
+# 全套 40 个测试通过，无回归 ✅
+
+$ PYTHONPATH=. .venv/bin/python verify_step_3_2.py
+  ✅ EWA 计算正确: 0.2670 ≈ 0.267
+  ✅ apply_correction: 2.0 → 1.98 (bias=1.0%)
+  ✅ apply_correction: 2.0 → 2.0 (bias=0.0%)
+  ✅ apply_correction: 2.0 → 2.02 (bias=-1.0%)
+  ✅ 行数合规 (103 ≤ 150)
+  ✅ 步骤 3.2 全部验证通过!
+```
+
+### 注意事项（供后续开发者）
+
+- `correct_fund_estimate` 应在 `estimate_fund_nav` 之后调用，输入原始估算值，输出修正后的值。
+- 在系统初运行时无历史误差数据，`calculate_ewa_bias` 返回 0.0，`correct_fund_estimate` 返回原始值（`is_corrected=False`）。
+- `update_actual_and_errors` 由定时任务在每日收盘后调用，回填实际净值后 `crud` 层自动计算 `error_rate`。
+- `alpha` 参数默认从 `config.EWA_ALPHA` 读取，测试时可传入自定义值。
+
+---
+
+## 阶段 3 完成总结
+
+| 步骤 | 内容 | 状态 |
+|------|------|------|
+| 3.1 | NAV 估算核心算法 (nav_estimator.py) | ✅ |
+| 3.2 | 误差修正模块 (error_correction.py) | ✅ |
+
+> **阶段 3（计算引擎层）已全部完成，可以开始阶段 4（API 服务层）。**

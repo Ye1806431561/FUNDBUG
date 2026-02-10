@@ -177,7 +177,7 @@ CREATE TABLE user_watchlist (
 | `src/data/holdings.py` | 获取基金季报持仓数据 | → `src/db/crud.py` |
 | `src/data/realtime.py` | 获取股票实时行情（含缓存） | 无 |
 | `src/engine/nav_estimator.py` | **NAV 估算核心算法**（146 行）— 导出 `estimate_fund_nav(fund_code)` 单基金估算、`estimate_all_watchlist()` 批量估算。内部 `_calculate_weighted_return` 纯函数计算加权涨跌幅和现金比例。公式：`预估净值 = 前一日净值 × (1 + 加权涨跌幅/100)`，未披露持仓视为现金 | → `src/data/realtime.py`, `src/db/crud.py` |
-| `src/engine/error_correction.py` | EWA 误差修正算法 | → `src/db/crud.py` |
+| `src/engine/error_correction.py` | **EWA 误差修正模块**（103 行）— 导出 `calculate_ewa_bias(fund_code)` 计算历史误差的指数加权平均偏差、`apply_correction(nav, bias)` 纯函数修正净值、`correct_fund_estimate(fund_code, nav, return)` 完整修正流程、`update_actual_and_errors(fund_code, actual_nav, date)` 收盘后回填实际净值。公式：`EWA_t = α×error_t + (1-α)×EWA_{t-1}`，`α=0.3` | → `src/db/crud.py`, ← `config.EWA_ALPHA` |
 | `src/db/models.py` | **数据库表结构定义和初始化**（106 行）— 定义 5 张表的 `CREATE TABLE` SQL，导出 `init_db(db_path)` 建表函数和 `get_connection(db_path)` 连接函数。启用 `PRAGMA foreign_keys = ON` + `sqlite3.Row` factory | ← `config.DATABASE_PATH` |
 | `src/db/crud.py` | 数据库 CRUD 操作封装 | ← `src/db/models.py` |
 | `src/api/schemas.py` | Pydantic 请求/响应模型 | 无 |

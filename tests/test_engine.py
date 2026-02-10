@@ -169,3 +169,73 @@ class TestEstimateAllWatchlist:
         mock_crud.get_watchlist.return_value = []
         results = estimate_all_watchlist()
         assert results == []
+
+
+# ── 误差修正测试 ──────────────────────────────────────────
+
+from src.engine.error_correction import (
+    calculate_ewa_bias,
+    apply_correction,
+    correct_fund_estimate,
+    update_actual_and_errors,
+)
+
+
+class TestErrorCorrection:
+
+    @patch("src.engine.error_correction.crud")
+    def test_ewa_calculation(self, mock_crud):
+        """α=0.3，3 条误差 [1.0, 2.0, -1.0] → EWA 正确"""
+        mock_crud.get_estimate_errors.return_value = [
+            {"error_rate": -1.0, "estimate_time": "2024-01-03"},
+            {"error_rate": 2.0, "estimate_time": "2024-01-02"},
+            {"error_rate": 1.0, "estimate_time": "2024-01-01"},
+        ]
+        # 反转后正序: [1.0, 2.0, -1.0]
+        # EWA_0 = 0.3*1.0 + 0.7*0.0 = 0.3
+        # EWA_1 = 0.3*2.0 + 0.7*0.3 = 0.6 + 0.21 = 0.81
+        # EWA_2 = 0.3*(-1.0) + 0.7*0.81 = -0.3 + 0.567 = 0.267
+        result = calculate_ewa_bias("000001", alpha=0.3)
+        assert abs(result - 0.267) < 0.001
+
+    @patch("src.engine.error_correction.crud")
+    def test_ewa_with_alpha_weight(self, mock_crud):
+        """验证 α=0.3 时，单条误差占 30% 权重"""
+        mock_crud.get_estimate_errors.return_value = [
+            {"error_rate": 5.0, "estimate_time": "2024-01-01"},
+        ]
+        # EWA = 0.3 * 5.0 + 0.7 * 0.0 = 1.5
+        result = calculate_ewa_bias("000001", alpha=0.3)
+        assert abs(result - 1.5) < 0.001
+
+    @patch("src.engine.error_correction.crud")
+    def test_ewa_no_history(self, mock_crud):
+        """无历史数据 → 返回 0.0"""
+        mock_crud.get_estimate_errors.return_value = []
+        result = calculate_ewa_bias("000001")
+        assert result == 0.0
+
+    def test_apply_correction(self):
+        """修正函数: NAV=2.0, bias=1.0% → 修正后 ≈ 1.98"""
+        corrected = apply_correction(2.0, 1.0)
+        assert abs(corrected - 1.98) < 0.001
+
+    @patch("src.engine.error_correction.crud")
+    def test_correct_fund_estimate_success(self, mock_crud):
+        """完整修正流程：有历史偏差时修正净值"""
+        mock_crud.get_estimate_errors.return_value = [
+            {"error_rate": 2.0, "estimate_time": "2024-01-01"},
+        ]
+        result = correct_fund_estimate("000001", 2.0, 0.9)
+        assert result["is_corrected"] is True
+        assert result["corrected_nav"] != 2.0
+        assert abs(result["ewa_bias"] - 0.6) < 0.001
+
+    @patch("src.engine.error_correction.crud")
+    def test_correct_fund_estimate_no_bias(self, mock_crud):
+        """无历史偏差 → 返回原始值"""
+        mock_crud.get_estimate_errors.return_value = []
+        result = correct_fund_estimate("000001", 2.0, 0.9)
+        assert result["is_corrected"] is False
+        assert result["corrected_nav"] == 2.0
+        assert result["corrected_return"] == 0.9

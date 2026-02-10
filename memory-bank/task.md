@@ -13,9 +13,9 @@
     - [x] 2.1 Fund list collection
     - [x] 2.2 Holdings data collection
     - [x] 2.3 Realtime quotes
-- [ ] Phase 3: Calculation Engine
+- [x] Phase 3: Calculation Engine
     - [x] 3.1 NAV Estimator
-    - [ ] 3.2 Error Correction
+    - [x] 3.2 Error Correction
 - [ ] Phase 4: API Layer
     - [ ] 4.1 Schemas
     - [ ] 4.2 Routes
