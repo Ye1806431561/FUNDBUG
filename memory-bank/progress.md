@@ -4,33 +4,32 @@
 
 ---
 
-## 2026-02-09 - 步骤 0.1: 创建项目目录结构 ✅
+## 2026-02-10 - 步骤 0.1: 创建项目目录结构 & Git 初始化 ✅
 
 ### 完成内容
 
-创建了完整的模块化项目结构：
+1. **创建项目结构**：
+    ```
+    FUNDBUG/
+    ├── src/                    # 源代码目录
+    │   ├── __init__.py
+    │   ├── data/               # 数据采集层
+    │   ├── engine/             # 计算引擎层
+    │   ├── api/                # API 服务层
+    │   ├── db/                 # 数据库层
+    │   └── utils/              # 公共工具
+    ├── frontend/               # 前端目录
+    ├── data/                   # SQLite 数据库目录
+    ├── config.py               # 配置文件
+    └── main.py                 # 主入口文件
+    ```
 
-```
-FUNDBUG/
-├── src/                    # 源代码目录
-│   ├── __init__.py         # 包标识
-│   ├── data/               # 数据采集层
-│   │   └── __init__.py
-│   ├── engine/             # 计算引擎层
-│   │   └── __init__.py
-│   ├── api/                # API 服务层
-│   │   └── __init__.py
-│   ├── db/                 # 数据库层
-│   │   └── __init__.py
-│   └── utils/              # 公共工具
-│       └── __init__.py
-├── frontend/               # 前端目录
-│   └── index.html          # 占位文件
-├── data/                   # SQLite 数据库目录
-│   └── .gitkeep
-├── config.py               # 配置文件 (已包含所有常量)
-└── main.py                 # 主入口文件 (占位)
-```
+2. **Git 初始化**：
+    - 创建/确认 `.gitignore`
+    - 执行 `git init`
+    - 执行 `git add .`
+    - 执行 `git commit -m "Initial commit..."`
+    - **当前状态**：本地 Git 仓库已就绪，等待推送到远程仓库。
 
 ### 关键决策
 
@@ -46,10 +45,41 @@ $ find src -name "__init__.py" | wc -l
 
 $ ls config.py main.py frontend/ data/
 config.py  main.py  data/  frontend/  ✅
+
+$ git status
+On branch master (or main)
+nothing to commit, working tree clean ✅
 ```
+
+---
+
+## 2026-02-10 - 步骤 0.2: 创建 requirements.txt ✅
+
+### 完成内容
+
+1. **创建 `requirements.txt`**：
+    - 包含 9 个依赖项，按功能分组并加中文注释
+    - fastapi, uvicorn（API 服务）
+    - akshare（数据采集）
+    - pandas, numpy（数据计算）
+    - apscheduler（定时任务）
+    - jinja2（前端模板）
+    - python-multipart（表单处理）
+    - pytest（测试）
+
+### 验证结果
+
+```bash
+$ cat requirements.txt
+# 内容正确，9 个依赖项全部列出 ✅
+```
+
+### 待用户验证
+
+- [ ] 运行 `pip install -r requirements.txt` 确认所有依赖可安装
 
 ---
 
 ## 下一步
 
-- [ ] 步骤 0.2: 创建 requirements.txt
+- [ ] 步骤 0.3: 创建 Python 虚拟环境（等待用户验证 0.2 后开始）
