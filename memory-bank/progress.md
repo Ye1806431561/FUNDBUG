@@ -407,6 +407,7 @@ Total disclosed weight: 64.07% (Undisclosed/Cash: 35.93%)
 - [x] 阶段 2 步骤 2.1: 创建基金列表获取模块 (src/data/fund_list.py) ✅
 - [x] 阶段 2 步骤 2.2: 创建持仓数据获取模块 (src/data/holdings.py) ✅
 - [x] 阶段 2 步骤 2.3: 创建实时行情获取模块 (src/data/realtime.py) ✅
+- [x] 阶段 3 步骤 3.1: 创建 NAV 估算核心算法 (src/engine/nav_estimator.py) ✅
 
 ---
 
@@ -465,10 +466,79 @@ Fallback: Fetching 3 stocks individually...
 ## 阶段 2 完成总结
 
 | 步骤 | 内容 | 状态 |
-|------|------|------|
+|------|------|----------|
 | 2.1 | 基金列表获取 (fund_list.py) | ✅ |
 | 2.2 | 持仓数据获取 (holdings.py) | ✅ |
 | 2.3 | 实时行情获取 (realtime.py) | ✅ |
 
 > **阶段 2（数据采集层）已全部完成，可以开始阶段 3（计算引擎层）。**
 
+---
+
+## 2026-02-10 - 步骤 3.1: 创建 NAV 估算核心算法 (src/engine/nav_estimator.py) ✅
+
+### 完成内容
+
+1. **创建 `src/engine/nav_estimator.py`**（146 行）：
+    - 实现 `_calculate_weighted_return(holdings, quotes_df)`：计算持仓加权涨跌幅和现金比例。遍历持仓列表，匹配实时行情中的涨跌幅，累加 `weight × change_percent / 100`。
+    - 实现 `estimate_fund_nav(fund_code)`：单基金净值估算完整流程——获取持仓 → 获取前一日净值 → 获取实时行情 → 加权计算 → 保存结果到数据库。
+    - 实现 `estimate_all_watchlist()`：批量估算用户关注列表中所有基金，逐个调用 `estimate_fund_nav` 并收集结果。
+
+2. **创建测试 `tests/test_engine.py`**（10 个测试用例）：
+    - **加权涨跌幅计算**：正常计算、现金比例、空持仓、部分行情缺失、空行情 5 个场景。
+    - **单基金估算**：成功流程、无持仓、无前一日净值 3 个场景。
+    - **批量估算**：正常批量、空关注列表 2 个场景。
+
+3. **创建验证脚本 `verify_step_3_1.py`**：
+    - 验证加权涨跌幅数学正确性。
+    - 验证完整估算流程（Mock 模式）。
+    - 验证边界情况处理（无持仓）。
+    - 验证文件行数合规。
+
+### 关键决策
+
+1. **单位一致性** — `weight` 和 `change_percent` 在数据库和 AKShare 接口中均为百分比形式（如 3.46 = 3.46%），算法中统一以百分比计算，避免因单位不一致导致的量级错误。
+2. **缺失行情处理** — 当某只持仓股票在实时行情中找不到（如停牌、退市），其涨跌幅视为 0%，不影响整体估算的稳定性。
+3. **职责分离** — `_calculate_weighted_return` 为纯计算函数（无副作用），`estimate_fund_nav` 负责数据获取和持久化，遵循 SRP 原则。
+4. **估算结果自动入库** — `estimate_fund_nav` 在计算完成后自动调用 `crud.insert_estimate` 保存记录，为后续步骤 3.2（误差修正）提供历史数据基础。
+
+### 核心算法公式
+
+```
+加权涨跌幅 = Σ(stock_weight × stock_change_percent) / 100
+现金比例 = 100% - Σ(已披露持仓占比)
+预估净值 = 前一日净值 × (1 + 加权涨跌幅 / 100)
+```
+
+### 验证结果
+
+```bash
+$ PYTHONPATH=. .venv/bin/pytest tests/test_engine.py -v
+tests/test_engine.py::TestCalculateWeightedReturn::test_normal_calculation PASSED [ 10%]
+tests/test_engine.py::TestCalculateWeightedReturn::test_cash_ratio_calculation PASSED [ 20%]
+tests/test_engine.py::TestCalculateWeightedReturn::test_empty_holdings PASSED [ 30%]
+tests/test_engine.py::TestCalculateWeightedReturn::test_missing_quote PASSED [ 40%]
+tests/test_engine.py::TestCalculateWeightedReturn::test_empty_quotes PASSED [ 50%]
+tests/test_engine.py::TestEstimateFundNav::test_success PASSED           [ 60%]
+tests/test_engine.py::TestEstimateFundNav::test_no_holdings PASSED       [ 70%]
+tests/test_engine.py::TestEstimateFundNav::test_no_latest_nav PASSED     [ 80%]
+tests/test_engine.py::TestEstimateAllWatchlist::test_batch_estimate PASSED [ 90%]
+tests/test_engine.py::TestEstimateAllWatchlist::test_empty_watchlist PASSED [100%]
+# 全部 10 个测试通过 ✅
+
+$ PYTHONPATH=. .venv/bin/pytest tests/ -v
+# 全套 34 个测试通过，无回归 ✅
+
+$ PYTHONPATH=. .venv/bin/python verify_step_3_1.py
+  ✅ 加权涨跌幅计算正确
+  ✅ 预估净值正确: 2.018 == 2.018
+  ✅ 无持仓返回 None (符合预期)
+  ✅ 行数合规 (146 ≤ 200)
+  ✅ 步骤 3.1 全部验证通过!
+```
+
+### 注意事项（供后续开发者）
+
+- `estimate_fund_nav` 依赖 `crud.get_fund()` 返回的 `latest_nav`，因此在估算前，必须确保基金已通过 `fund_list.save_fund_info()` 入库且包含有效净值。
+- `_calculate_weighted_return` 是纯函数，可独立用于单元测试，无需 Mock 任何外部依赖。
+- 步骤 3.2（误差修正）将在 `estimate_fund_nav` 输出的基础上应用 EWA 修正，修正后重新覆盖 `estimated_nav`。

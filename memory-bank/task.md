@@ -9,12 +9,12 @@
     - [x] 1.1 Create config.py
     - [x] 1.2 Create models.py
     - [x] 1.3 Create CRUD operations (src/db/crud.py)
-- [ ] Phase 2: Data Collection Layer
+- [x] Phase 2: Data Collection Layer
     - [x] 2.1 Fund list collection
     - [x] 2.2 Holdings data collection
     - [x] 2.3 Realtime quotes
 - [ ] Phase 3: Calculation Engine
-    - [ ] 3.1 NAV Estimator
+    - [x] 3.1 NAV Estimator
     - [ ] 3.2 Error Correction
 - [ ] Phase 4: API Layer
     - [ ] 4.1 Schemas
