@@ -406,4 +406,69 @@ Total disclosed weight: 64.07% (Undisclosed/Cash: 35.93%)
 - [x] 阶段 1 步骤 1.3: 创建 CRUD 操作 (src/db/crud.py) ✅
 - [x] 阶段 2 步骤 2.1: 创建基金列表获取模块 (src/data/fund_list.py) ✅
 - [x] 阶段 2 步骤 2.2: 创建持仓数据获取模块 (src/data/holdings.py) ✅
-- [ ] 阶段 2 步骤 2.3: 创建实时行情获取模块 (src/data/realtime.py)
+- [x] 阶段 2 步骤 2.3: 创建实时行情获取模块 (src/data/realtime.py) ✅
+
+---
+
+## 2026-02-10 - 步骤 2.3: 创建实时行情获取模块 (src/data/realtime.py) ✅
+
+### 完成内容
+
+1. **创建 `src/data/realtime.py`**：
+    - 实现 `get_realtime_quotes(stock_codes)` 函数，输入股票代码列表，返回包含 `stock_code`, `name`, `current_price`, `change_percent` 的 DataFrame。
+    - **批量获取优先**：默认使用 `ak.stock_zh_a_spot_em()` 一次性获取全市场实时行情（速度快，适合大规模数据）。
+    - **降级机制 (Fallback)**：当批量接口失败（如网络波动或接口不稳定）时，自动切换到 `_get_quotes_by_symbols`，使用 `ak.stock_bid_ask_em` 逐个获取。
+    - **并发加速**：降级模式下使用 `concurrent.futures.ThreadPoolExecutor` 并发请求（最大 10 线程），显著提升逐个获取的速度。
+    - **缓存机制**：使用模块级全局变量 `_SC_CACHE` 缓存全市场行情 60 秒，避免在一分钟内重复请求外部接口。
+
+2. **创建测试 `tests/test_realtime.py`**：
+    - 测试正常批量获取流程。
+    - 测试缓存是否生效（Mock 验证调用次数）。
+    - 测试无效股票代码处理。
+    - **测试降级机制**：Mock 批量接口失败，验证是否自动切换到逐个获取并返回正确数据。
+
+3. **验证脚本 `verify_step_2_3.py`**：
+    - 验证真实网络环境下的 API 连通性。
+    - 验证数据字段 integrity（价格 > 0，涨跌幅合理）。
+    - 验证降级逻辑（在批量接口不稳定时自动恢复）。
+
+### 关键决策
+
+1. **双重获取策略** — `ak.stock_zh_a_spot_em` 接口虽然高效但近期不稳定（频繁出现 `RemoteDisconnected`），因此引入 `ak.stock_bid_ask_em` 作为兜底方案。这种“乐观批量，悲观并发”的策略极大地提高了系统的鲁棒性。
+2. **线程池并发** — 单线程逐个获取 100 只股票可能需要数十秒，使用 ThreadPoolExecutor 将耗时压缩到可接受范围（~2-5秒）。
+3. **缓存粒度** — 缓存设为 60 秒，与项目要求的“每分钟更新一次”频率一致，既保证实时性又避免触发反爬限制。
+
+### 验证结果
+
+```bash
+$ PYTHONPATH=. .venv/bin/pytest tests/test_realtime.py -v
+tests/test_realtime.py::test_get_realtime_quotes_success PASSED          [ 25%]
+tests/test_realtime.py::test_get_realtime_quotes_caching PASSED          [ 50%]
+tests/test_realtime.py::test_get_realtime_quotes_invalid_code PASSED     [ 75%]
+tests/test_realtime.py::test_get_realtime_quotes_fallback PASSED         [100%]
+# 全部测试通过 ✅
+
+$ python verify_step_2_3.py
+--- Verifying Step 2.3: Realtime Quotes ---
+Fetching quotes for: ['000001', '600519', '300750']
+Error fetching batch real-time quotes: ...
+Attempt 1/3 failed ...
+...
+Fallback: Fetching 3 stocks individually...
+✅ Successfully fetched 3 quotes.
+✅ Price for 000001 (11.06) is valid
+✅ Change percent for 000001 (-0.09%) is reasonable
+```
+
+---
+
+## 阶段 2 完成总结
+
+| 步骤 | 内容 | 状态 |
+|------|------|------|
+| 2.1 | 基金列表获取 (fund_list.py) | ✅ |
+| 2.2 | 持仓数据获取 (holdings.py) | ✅ |
+| 2.3 | 实时行情获取 (realtime.py) | ✅ |
+
+> **阶段 2（数据采集层）已全部完成，可以开始阶段 3（计算引擎层）。**
+
