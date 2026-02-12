@@ -181,7 +181,7 @@ CREATE TABLE user_watchlist (
 | `src/db/models.py` | **数据库表结构定义和初始化**（106 行）— 定义 5 张表的 `CREATE TABLE` SQL，导出 `init_db(db_path)` 建表函数和 `get_connection(db_path)` 连接函数。启用 `PRAGMA foreign_keys = ON` + `sqlite3.Row` factory | ← `config.DATABASE_PATH` |
 | `src/db/crud.py` | 数据库 CRUD 操作封装 | ← `src/db/models.py` |
 | `src/api/schemas.py` | **Pydantic 数据模型**（88 行）— 定义 6 个 API 交互模型：`AddFundRequest` (含 6 位代码校验), `FundInfo`, `FundHolding`, `NAVEstimate` (整合估算与修正数据), `NAVHistory`, `WatchlistItem`。自带 Mock 示例数据。 | 无 |
-| `src/api/routes.py` | FastAPI 路由定义 | → `src/db/crud.py`, `src/engine/*` |
+| `src/api/routes.py` | **FastAPI 路由定义**（109 行）— 实现 8 个端点，涵盖关注列表增删改查、基金持仓、历史净值及集成了误差修正的实时估算。在添加关注时支持同步触发数据采集。 | → `src/db/crud.py`, `src/engine/*`, `src/data/*` |
 | `src/utils/helpers.py` | 通用辅助函数（如 retry_on_failure） | 无 |
 
 ### 其他目录

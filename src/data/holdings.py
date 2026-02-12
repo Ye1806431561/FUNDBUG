@@ -114,7 +114,7 @@ def save_fund_holdings(fund_code: str) -> bool:
     
     # Save to DB
     try:
-        crud.insert_holdings(holdings)
+        crud.insert_holdings(fund_code, holdings)
         return True
     except Exception as e:
         print(f"Error saving holdings for {fund_code}: {e}")

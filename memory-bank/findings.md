@@ -55,7 +55,7 @@
 | 修正涨跌幅 = 原始涨跌幅 - EWA 偏差 | 与净值修正方向一致，保持数据语义正确 |
 | AddFundRequest 强制正则校验 | 基金代码必须为 6 位数字，利用 Pydantic Field 直接实现入口防御 |
 | API 响应模型附带 Examples | 充分利用 Pydantic v2 `json_schema_extra` 提升 Swagger 文档可读性 |
-| 极致行数控制（Schema < 100 行） | 通过压缩非必要空行和分隔注释，确保在复杂业务场景下仍能遵守架构红线 |
+| 极致行数控制（Schema < 100 行） | 通过压缩非必要空行和分隔注释，确保在复杂业务场景下仍能遵守架构红线 |  
 
 ## Issues Encountered
 <!-- 
@@ -68,7 +68,8 @@
 <!-- Errors and how they were resolved -->
 | Issue | Resolution |
 |-------|------------|
-| `crud.py` 行数已达 343 行（超过 200 行限制） | 历史遗留问题，当前步骤未修改 crud.py，后续重构时需拆分 |
+| `src/data/holdings.py` 缺少参数调用 | 修复了 `save_fund_holdings` 中调用 `crud.insert_holdings` 缺失 `fund_code` 参数的问题 |
+| AKShare 接口频繁断连 (RemoteDisconnected) | 观测到全量行情和单个行情接口在请求量大时极不稳定。系统通过降级机制（批量->逐个）和 ThreadPoolExecutor 并发抓取提高了存活率，但仍存在部分失败风险。 |
 
 ## Resources
 <!-- 
