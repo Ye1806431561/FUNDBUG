@@ -2,7 +2,23 @@ import os
 import pytest
 import tempfile
 from unittest.mock import patch
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
 from src.db.models import init_db, get_connection
+from src.api.routes import router
+
+@pytest.fixture
+def app():
+    """Create a FastAPI application for testing."""
+    application = FastAPI()
+    application.include_router(router)
+    return application
+
+@pytest.fixture
+def client(app):
+    """Create a TestClient for API testing."""
+    return TestClient(app)
 
 @pytest.fixture
 def test_db_path():
@@ -22,10 +38,6 @@ def test_db_path():
 @pytest.fixture(autouse=True)
 def mock_db_connection(test_db_path):
     """Automatically patch get_connection in crud to use the test database."""
-    # We patch the import in src.db.crud
-    # Since crud.py does `from src.db.models import get_connection`, 
-    # we can patch `src.db.crud.get_connection`
-    
     def get_test_connection():
         return get_connection(test_db_path)
         

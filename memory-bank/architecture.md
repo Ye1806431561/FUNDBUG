@@ -161,6 +161,7 @@ CREATE TABLE user_watchlist (
 | `requirements.txt` | **依赖清单** — 9 个直接依赖，按功能分组（API/数据/计算/任务/前端/测试） |
 | `.gitignore` | **Git 忽略规则** — 排除 `.venv/`、`__pycache__/`、`.db` 文件、IDE 配置等 |
 | `CLAUDE.md` | **AI 开发者指令** — 项目级编码规范、架构约束、认知架构（AI 辅助开发时自动读取） |
+| `run_tests.sh` | **测试运行脚本** — 一键运行全量 pytest 测试，自动设置环境变量 |
 
 ### 环境目录
 

@@ -59,6 +59,8 @@
 | `main.py` 采用 `lifespan` 管理异步上下文 | 确保 APScheduler 在 FastAPI 启停时同步正确启动和关闭，避免资源泄漏 |
 | 任务调度使用 `CronTrigger` 替代 `IntervalTrigger` | `CronTrigger` 支持 `day_of_week` 且语义更清晰。在任务内部增加 `is_trading_time` 校验提供双重保障 |
 | 注册 4 个核心后台任务 | 包括持仓更新、盘中估算、每日净值回填和数据清理，全面覆盖系统运行需求 |
+| 测试基础设施工程化 | 将 TestClient 提升至 conftest.py 级别，极大简化了 API 测试的编写负担 |
+| 自动化测试流水线脚本 | 通过 run_tests.sh 规范化测试运行环境，避免 PYTHONPATH 缺失导致的模块导入错误 |
 
 ## Issues Encountered
 <!-- 
