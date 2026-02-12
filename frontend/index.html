@@ -43,6 +43,19 @@
             <p>基于指数加权平均 (EWA) 自动修正估算偏差</p>
         </footer>
     </div>
+
+    <!-- 确认删除弹窗 -->
+    <div id="confirm-modal" class="modal-overlay" style="display: none;">
+        <div class="modal">
+            <h3>确认删除</h3>
+            <p>确定要移除基金 <span id="modal-fund-code" style="font-weight:bold; color:var(--accent-color);"></span> 吗？</p>
+            <div class="modal-actions">
+                <button id="modal-cancel" class="btn-secondary">取消</button>
+                <button id="modal-confirm" class="btn-danger">删除</button>
+            </div>
+        </div>
+    </div>
+
     <script src="app.js"></script>
 </body>
 

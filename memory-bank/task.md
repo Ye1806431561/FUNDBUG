@@ -24,8 +24,8 @@
     - [/] 5.2 Test infrastructure
 - [x] Phase 6: Frontend
     - [x] 6.1 HTML
-    - [ ] 6.2 JS
-    - [ ] 6.3 CSS
+    - [x] 6.2 JS
+    - [x] 6.3 CSS
 - [ ] Phase 7: Integration & Verification
     - [ ] 7.1 E2E Verification
     - [ ] 7.2 Cleanup Verification

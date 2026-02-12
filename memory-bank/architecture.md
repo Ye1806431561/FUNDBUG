@@ -272,3 +272,29 @@ CREATE TABLE user_watchlist (
 | `jinja2` | `main.py` (模板配置) | FastAPI 模板引擎 |
 | `sqlite3` | `src/db/*.py` | Python 内置，无需安装 |
 
+---
+
+## 前端交互模式 (Interaction Patterns)
+
+### 1. 异步轮询与状态锁定 (Polling & State Locking)
+为了保证后台数据更新不干扰前台用户交互，引入了 **isConfirming 状态位**：
+- **场景**：系统每 60 秒自动更新一次净值估算。
+- **冲突**：如果更新触发时用户正在操作弹窗，DOM 变动可能导致弹窗关闭或重排。
+- **方案**：在 `refreshEstimates` 开始前检查 `isConfirming` 标志。若为 `true`，则跳过本次刷新。
+
+### 2. 乐观更新与回滚 (Optimistic UI)
+删除基金时采用乐观更新：
+- 点击删除确认后，立即将卡片设为半透明（`opacity: 0.5`）并禁用交互。
+- 待后端接口成功响应后彻底移除 DOM。
+- 若后端失败，通过保存的备份恢复卡片显示并提示错误。
+
+### 3. 自定义组件替代原生 UI
+- **规范**：禁止使用 `confirm()`、`alert()` 等阻塞主线程且易受 DOM 更新干扰的原生方法。
+- **实现**：采用 HTML/CSS 模态框，通过 `display: flex/none` 手动控制可见性，并在模态框激活时锁定全局刷新。
+
+### 4. 色彩语义分离 (Semantic Color System)
+为了适应不同金融市场的习惯（中/美），架构上将颜色定义分为两层：
+- **语义层**：`--up-color`, `--down-color` (表示涨跌)
+- **状态层**：`--success`, `--danger` (表示成功/失败)
+- **实现**：`style.css` 中定义映射关系，JS 逻辑只操作 `.up/.down` 类名，不直接操作颜色值。
+
