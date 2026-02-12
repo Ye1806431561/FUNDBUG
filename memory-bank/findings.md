@@ -53,6 +53,9 @@
 | EWA 按时间正序逐步累加 | `crud.get_estimate_errors` 返回 DESC，代码 reverse() 后累加确保最近误差权重最高 |
 | `apply_correction` 设计为纯函数 | 与 `_calculate_weighted_return` 同理，无副作用、可独立测试 |
 | 修正涨跌幅 = 原始涨跌幅 - EWA 偏差 | 与净值修正方向一致，保持数据语义正确 |
+| AddFundRequest 强制正则校验 | 基金代码必须为 6 位数字，利用 Pydantic Field 直接实现入口防御 |
+| API 响应模型附带 Examples | 充分利用 Pydantic v2 `json_schema_extra` 提升 Swagger 文档可读性 |
+| 极致行数控制（Schema < 100 行） | 通过压缩非必要空行和分隔注释，确保在复杂业务场景下仍能遵守架构红线 |
 
 ## Issues Encountered
 <!-- 

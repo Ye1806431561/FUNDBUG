@@ -620,3 +620,53 @@ $ PYTHONPATH=. .venv/bin/python verify_step_3_2.py
 | 3.2 | 误差修正模块 (error_correction.py) | ✅ |
 
 > **阶段 3（计算引擎层）已全部完成，可以开始阶段 4（API 服务层）。**
+
+---
+
+## 2026-02-12 - 步骤 4.1: 创建 Pydantic 模型 (src/api/schemas.py) ✅
+
+### 完成内容
+
+1. **创建 `src/api/schemas.py`**（88 行）：
+    - 定义 6 个 Pydantic v2 模型，涵盖请求校验、基础信息、持仓、历史净值、实时估算及关注列表。
+    - **AddFundRequest**: 包含 `fund_code` 的正则校验 (`^\d{6}$`)。
+    - **NAVEstimate**: 整合了原始计算结果与误差修正字段（`corrected_nav`, `ewa_bias` 等）。
+    - 为每个模型添加了 `json_schema_extra` 示例数据，用于自动生成 API 文档（Swagger）。
+
+2. **验证与测试**：
+    - 验证 Schema 的 JSON 生成能力。
+    - 验证 `AddFundRequest` 的格式校验逻辑。
+    - 运行全套 40 个 pytest 测试用例，确保无回归。
+    - 确认文件行数（88 行）符合 ≤ 100 行的架构约束。
+
+### 关键决策
+
+1. **完全对齐数据源**：字段命名和类型严格参考 `src/db/models.py` 和计算引擎返回字典，避免在 API 层引入语义歧义。
+2. **强制格式校验**：在 API 入口层通过 Pydantic 正则表达式强制校验 6 位基金代码，将非法输入拦截在业务逻辑之外。
+3. **Pydantic v2 特性**：使用了 `model_config` 和 `ConfigDict` 等 v2 新特性，确保向前兼容性和更好的性能。
+4. **极致行数控制**：通过优化空行和注释结构，在保持可读性的同时将行数控制在 100 行以内，符合精益架构原则。
+
+### 验证结果
+
+```bash
+$ PYTHONPATH=. .venv/bin/python -c "from src.api.schemas import NAVEstimate; print(NAVEstimate.model_json_schema())"
+✅ Schema 生成成功
+
+$ PYTHONPATH=. .venv/bin/pytest tests/ -v
+✅ 40 passed (包含 16 个引擎测试和 7 个持仓测试)
+
+$ wc -l src/api/schemas.py
+88 src/api/schemas.py ✅ (上限 100 行)
+```
+
+---
+
+## 阶段 4 进度
+
+| 步骤 | 内容 | 状态 |
+|------|------|------|
+| 4.1 | Pydantic 模型 (schemas.py) | ✅ |
+| 4.2 | API 路由 (routes.py) | [ ] |
+
+---
+```

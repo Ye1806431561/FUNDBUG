@@ -180,7 +180,7 @@ CREATE TABLE user_watchlist (
 | `src/engine/error_correction.py` | **EWA 误差修正模块**（103 行）— 导出 `calculate_ewa_bias(fund_code)` 计算历史误差的指数加权平均偏差、`apply_correction(nav, bias)` 纯函数修正净值、`correct_fund_estimate(fund_code, nav, return)` 完整修正流程、`update_actual_and_errors(fund_code, actual_nav, date)` 收盘后回填实际净值。公式：`EWA_t = α×error_t + (1-α)×EWA_{t-1}`，`α=0.3` | → `src/db/crud.py`, ← `config.EWA_ALPHA` |
 | `src/db/models.py` | **数据库表结构定义和初始化**（106 行）— 定义 5 张表的 `CREATE TABLE` SQL，导出 `init_db(db_path)` 建表函数和 `get_connection(db_path)` 连接函数。启用 `PRAGMA foreign_keys = ON` + `sqlite3.Row` factory | ← `config.DATABASE_PATH` |
 | `src/db/crud.py` | 数据库 CRUD 操作封装 | ← `src/db/models.py` |
-| `src/api/schemas.py` | Pydantic 请求/响应模型 | 无 |
+| `src/api/schemas.py` | **Pydantic 数据模型**（88 行）— 定义 6 个 API 交互模型：`AddFundRequest` (含 6 位代码校验), `FundInfo`, `FundHolding`, `NAVEstimate` (整合估算与修正数据), `NAVHistory`, `WatchlistItem`。自带 Mock 示例数据。 | 无 |
 | `src/api/routes.py` | FastAPI 路由定义 | → `src/db/crud.py`, `src/engine/*` |
 | `src/utils/helpers.py` | 通用辅助函数（如 retry_on_failure） | 无 |
 
