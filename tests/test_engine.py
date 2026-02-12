@@ -43,12 +43,20 @@ MOCK_FUND_INFO = {
 
 # ── 加权涨跌幅计算测试 ──────────────────────────────────
 
+# ── 加权涨跌幅计算测试 ──────────────────────────────────
+
 class TestCalculateWeightedReturn:
 
     def test_normal_calculation(self):
         """固定持仓+固定涨跌幅 → 验证加权计算正确"""
+        # Convert MOCK_QUOTES_DF to dict for the new signature
+        quote_map = {
+            "000001": 2.0,
+            "600519": -1.0,
+            "300750": 3.0
+        }
         weighted_return, cash_ratio = _calculate_weighted_return(
-            MOCK_HOLDINGS, MOCK_QUOTES_DF
+            MOCK_HOLDINGS, quote_map
         )
         # weight=10 * change=2.0 / 100 = 0.20
         # weight=20 * change=-1.0 / 100 = -0.20
@@ -59,25 +67,31 @@ class TestCalculateWeightedReturn:
 
     def test_cash_ratio_calculation(self):
         """持仓总占比 60% → 现金比例 = 40%"""
-        _, cash_ratio = _calculate_weighted_return(MOCK_HOLDINGS, MOCK_QUOTES_DF)
+        quote_map = {
+            "000001": 2.0,
+            "600519": -1.0,
+            "300750": 3.0
+        }
+        _, cash_ratio = _calculate_weighted_return(MOCK_HOLDINGS, quote_map)
         assert abs(cash_ratio - 40.0) < 0.001
 
     def test_empty_holdings(self):
         """无持仓 → 涨跌幅 0%，现金 100%"""
-        weighted_return, cash_ratio = _calculate_weighted_return([], MOCK_QUOTES_DF)
+        quote_map = {
+            "000001": 2.0
+        }
+        weighted_return, cash_ratio = _calculate_weighted_return([], quote_map)
         assert weighted_return == 0.0
         assert cash_ratio == 100.0
 
     def test_missing_quote(self):
         """持仓中有股票无行情 → 该股票涨跌幅视为 0%"""
-        partial_quotes = pd.DataFrame({
-            "stock_code": ["000001"],
-            "name": ["平安银行"],
-            "current_price": [11.0],
-            "change_percent": [2.0],
-        })
+        quote_map = {
+            "000001": 2.0
+            # 600519, 300750 missing
+        }
         weighted_return, cash_ratio = _calculate_weighted_return(
-            MOCK_HOLDINGS, partial_quotes
+            MOCK_HOLDINGS, quote_map
         )
         # 只有 000001 有行情: 10 * 2.0 / 100 = 0.20
         # 其余两只股票涨跌幅视为 0
@@ -86,11 +100,9 @@ class TestCalculateWeightedReturn:
 
     def test_empty_quotes(self):
         """行情为空 → 所有股票涨跌幅视为 0%"""
-        empty_df = pd.DataFrame(
-            columns=["stock_code", "name", "current_price", "change_percent"]
-        )
+        quote_map = {}
         weighted_return, cash_ratio = _calculate_weighted_return(
-            MOCK_HOLDINGS, empty_df
+            MOCK_HOLDINGS, quote_map
         )
         assert weighted_return == 0.0
         assert abs(cash_ratio - 40.0) < 0.001
@@ -100,14 +112,28 @@ class TestCalculateWeightedReturn:
 
 class TestEstimateFundNav:
 
-    @patch("src.engine.nav_estimator.get_realtime_quotes")
+    @patch("src.engine.nav_estimator.AsyncRealtimeProvider")
     @patch("src.engine.nav_estimator.crud")
-    def test_success(self, mock_crud, mock_quotes):
+    def test_success(self, mock_crud, mock_provider_cls):
         """正常估算流程：持仓+净值+行情均有效"""
         mock_crud.get_latest_holdings.return_value = MOCK_HOLDINGS
         mock_crud.get_fund.return_value = MOCK_FUND_INFO
         mock_crud.insert_estimate.return_value = True
-        mock_quotes.return_value = MOCK_QUOTES_DF
+        
+        # Mock AsyncRealtimeProvider
+        mock_instance = MagicMock()
+        mock_provider_cls.get_instance.return_value = mock_instance
+        
+        def get_quote_side_effect(code):
+            # MOCK_QUOTES_DF: 000001(+2.0), 600519(-1.0), 300750(+3.0)
+            data = {
+                "000001": {"change_percent": 2.0},
+                "600519": {"change_percent": -1.0},
+                "300750": {"change_percent": 3.0}
+            }
+            return data.get(code)
+            
+        mock_instance.get_cached_quote.side_effect = get_quote_side_effect
 
         result = estimate_fund_nav("000001")
 
@@ -124,17 +150,15 @@ class TestEstimateFundNav:
         # 验证保存到数据库
         mock_crud.insert_estimate.assert_called_once()
 
-    @patch("src.engine.nav_estimator.get_realtime_quotes")
     @patch("src.engine.nav_estimator.crud")
-    def test_no_holdings(self, mock_crud, mock_quotes):
+    def test_no_holdings(self, mock_crud):
         """无持仓数据 → 返回 None"""
         mock_crud.get_latest_holdings.return_value = []
         result = estimate_fund_nav("999999")
         assert result is None
 
-    @patch("src.engine.nav_estimator.get_realtime_quotes")
     @patch("src.engine.nav_estimator.crud")
-    def test_no_latest_nav(self, mock_crud, mock_quotes):
+    def test_no_latest_nav(self, mock_crud):
         """无前一日净值 → 返回 None"""
         mock_crud.get_latest_holdings.return_value = MOCK_HOLDINGS
         mock_crud.get_fund.return_value = {"fund_code": "000001", "latest_nav": None}

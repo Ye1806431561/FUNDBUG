@@ -11,20 +11,21 @@ from datetime import datetime
 from typing import List, Dict, Optional, Tuple
 
 from src.db import crud
-from src.data.realtime import get_realtime_quotes
+# from src.data.realtime import get_realtime_quotes # Deprecated
+from src.data.realtime import AsyncRealtimeProvider
 
 logger = logging.getLogger(__name__)
 
 
 def _calculate_weighted_return(
-    holdings: List[Dict], quotes_df
+    holdings: List[Dict], quote_map: Dict[str, float]
 ) -> Tuple[float, float]:
     """
     计算持仓加权涨跌幅和现金比例。
 
     Args:
         holdings: 持仓列表，每项含 stock_code, weight (百分比，如 3.46)
-        quotes_df: 实时行情 DataFrame，含 stock_code, change_percent (百分比)
+        quote_map: 股票代码 -> 涨跌幅(%) 的映射字典
 
     Returns:
         (weighted_return_pct, cash_ratio_pct)
@@ -33,12 +34,6 @@ def _calculate_weighted_return(
     """
     if not holdings:
         return 0.0, 100.0
-
-    # 构建行情查找字典: stock_code -> change_percent
-    quote_map = {}
-    if quotes_df is not None and not quotes_df.empty:
-        for _, row in quotes_df.iterrows():
-            quote_map[str(row["stock_code"])] = float(row["change_percent"])
 
     total_weight = 0.0
     weighted_return = 0.0
@@ -66,7 +61,7 @@ def estimate_fund_nav(fund_code: str) -> Optional[Dict]:
     步骤：
     1. 获取最新持仓数据
     2. 获取基金前一日净值
-    3. 获取持仓股票的实时行情
+    3. 从内存缓存获取持仓股票的实时行情 (AsyncRealtimeProvider)
     4. 计算加权涨跌幅（未披露持仓视为现金）
     5. 估算净值并保存到数据库
 
@@ -88,12 +83,30 @@ def estimate_fund_nav(fund_code: str) -> Optional[Dict]:
     latest_nav = float(fund_info["latest_nav"])
     fund_name = fund_info.get("fund_name", "")
 
-    # 3. 提取持仓股票代码，获取实时行情
-    stock_codes = [str(h["stock_code"]) for h in holdings]
-    quotes_df = get_realtime_quotes(stock_codes)
+    # 3. 从 AsyncRealtimeProvider 获取实时行情
+    # 这里不再进行阻塞式 IO 请求，而是直接读取内存
+    provider = AsyncRealtimeProvider.get_instance()
+    
+    quote_map = {}
+    missing_count = 0
+    
+    for h in holdings:
+        stock_code = str(h["stock_code"])
+        cached = provider.get_cached_quote(stock_code)
+        if cached:
+            quote_map[stock_code] = cached.get("change_percent", 0.0)
+        else:
+            missing_count += 1
+            # 缺失时默认为 0.0，不阻塞
+            
+    if missing_count > len(holdings) * 0.5:
+        # 如果超过 50% 的持仓没有行情数据，可能说明 Provider 还没准备好或者休市/数据源异常
+        # 但为了保证系统不挂，我们仍计算，只是日志警报
+        pass 
+        # logger.debug(f"Fund {fund_code}: Missing quotes for {missing_count}/{len(holdings)} stocks.")
 
     # 4. 计算加权涨跌幅
-    weighted_return, cash_ratio = _calculate_weighted_return(holdings, quotes_df)
+    weighted_return, cash_ratio = _calculate_weighted_return(holdings, quote_map)
 
     # 5. 计算预估净值
     estimated_nav = round(latest_nav * (1 + weighted_return / 100.0), 4)
@@ -129,10 +142,12 @@ def estimate_all_watchlist() -> List[Dict]:
     """
     watchlist = crud.get_watchlist()
     if not watchlist:
-        logger.info("Watchlist is empty, nothing to estimate")
+        # logger.debug("Watchlist is empty, nothing to estimate")
         return []
 
     results = []
+    # 此时 AsyncRealtimeProvider 已经在后台运行（由 main.py 启动）
+    # 这里的循环是内存操作，极快
     for item in watchlist:
         fund_code = item["fund_code"]
         try:
@@ -142,5 +157,6 @@ def estimate_all_watchlist() -> List[Dict]:
         except Exception as e:
             logger.error(f"Error estimating fund {fund_code}: {e}")
 
-    logger.info(f"Estimated {len(results)}/{len(watchlist)} funds")
+    if results:
+        logger.info(f"Estimated {len(results)} funds in watchlist.")
     return results

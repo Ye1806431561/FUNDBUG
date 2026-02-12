@@ -16,6 +16,7 @@ from src.db.models import init_db
 from src.api.routes import router
 from src.engine import nav_estimator
 from src.data import holdings, fund_list
+from src.data.realtime import AsyncRealtimeProvider
 from src.db import crud
 
 # 配置日志
@@ -69,14 +70,18 @@ async def lifespan(app: FastAPI):
     logger.info("Application starting up...")
     init_db()
     
+    # 启动实时数据提供者 (后台异步任务)
+    realtime_provider = AsyncRealtimeProvider.get_instance()
+    realtime_provider.start()
+    
     # 1. 注册持仓更新任务 (每日 08:30)
     scheduler.add_job(scheduled_holdings_update, CronTrigger(hour=8, minute=30))
     
-    # 2. 注册盘中估算任务 (周一至周五 09:30-15:00, 每分钟执行)
-    # 使用 cron 实现更简洁，且避免了 IntervalTrigger 不支持 day_of_week 的问题
+    # 2. 注册盘中估算任务 (周一至周五 09:30-15:00, 每3秒执行一次)
+    # 配合 AsyncRealtimeProvider 的 1 秒级数据更新
     scheduler.add_job(
         scheduled_intraday_estimation,
-        CronTrigger(day_of_week='mon-fri', hour='9-15', minute='*'),
+        CronTrigger(day_of_week='mon-fri', hour='9-15', second='*/3'),
     )
     
     # 3. 注册每日净值回填任务 (每日 18:00)
@@ -90,9 +95,10 @@ async def lifespan(app: FastAPI):
     
     yield
     
-    # Shutdown: 关闭调度器
+    # Shutdown: 关闭调度器和数据提供者
     logger.info("Application shutting down...")
     scheduler.shutdown()
+    realtime_provider.stop()
 
 app = FastAPI(title="FUNDBUG API", lifespan=lifespan)
 

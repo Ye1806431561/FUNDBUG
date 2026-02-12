@@ -83,6 +83,7 @@
 | **移动端适配** | 采用卡片式布局替代表格，确保在手机端也能清晰展示基金的 5+ 个关键指标而不拥挤。 |
 | **市场惯例适配** | 遵循中国股市“红涨绿跌”惯例，并重新定义 CSS 变量 `--up-color`/`--down-color`，与国际惯例（红跌绿涨）解耦，便于未来切换。 |
 | **外部接口不稳定性** | 观测到 `akshare` 在盘中高频访问时极易出现 `RemoteDisconnected`。目前的“批量失败转逐个”降级策略虽然能运行，但在极端网络下逐个获取也会大量失败（如 14:40 的日志显示）。建议未来引入本地缓存代理或更多备用数据源。 |
+| **高频数据采集的 API 封锁** | 在实施 1Hz 频率升级时，确认 AKShare 接口 (`stock_zh_a_spot_em`) 在高频调用下会被服务端断开连接 (`RemoteDisconnected`)，疑似 IP 封锁或云环境限制。**解决方案**：架构上采用 `AsyncRealtimeProvider` + 线程池的设计是正确的，但在生产环境可能需要：1. 使用代理池；2. 降低单 IP 频率；3. 仅拉取 Watchlist 股票 (`AsyncRealtimeProvider.update_watchlist`)。 |
 
 
 ## Resources

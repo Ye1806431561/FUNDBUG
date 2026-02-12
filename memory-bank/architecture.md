@@ -126,15 +126,14 @@ CREATE TABLE user_watchlist (
 |------|------|------|----------|
 | `data/` | `fund_list.py` | 从 AKShare 获取基金列表 | 200 |
 | `data/` | `holdings.py` | 获取基金季报持仓数据（自动解析最新季度，未披露部分视为现金） | 200 |
-| `data/` | `realtime.py` | 获取股票实时行情（优先批量，失败自动降级为并发逐个获取 + 60s缓存） | 200 |
-| `engine/` | `nav_estimator.py` | NAV 估算核心算法 | 200 |
-| `engine/` | `error_correction.py` | 基于历史误差的修正 | 150 |
-| `db/` | `models.py` | SQLAlchemy 或原生 SQL 模型 | 150 |
-| `db/` | `models.py` | SQLAlchemy 或原生 SQL 模型 | 150 |
-| `db/` | `crud.py` | **CRUD 外观模式 (Facade)** - 统一重新导出子模块函数 | 50 |
-| `db/` | `crud_*.py` | 具体实现：funds, holdings, nav, watchlist | 150 |
-| `api/` | `routes.py` | FastAPI 路由定义 | 150 |
-| `api/` | `schemas.py` | Pydantic 请求/响应模型 | 100 |
+| `data/` | `realtime.py` | **异步实时行情服务** (单例) — 维护后台循环每 1s 拉取全市场行情。使用 `ThreadPoolExecutor` 隔离阻塞 I/O，提供 O(1) 内存缓存读取。 | 300 |
+| `engine/` | `nav_estimator.py` | **NAV 估算核心算法** — 从 `AsyncRealtimeProvider` 读取内存缓存进行零 I/O 估算。支持批量估算。 | 200 |
+| `engine/` | `error_correction.py` | **EWA 误差修正模块** — 基于历史误差修正估算结果。公式：`EWA_t = α×error_t + (1-α)×EWA_{t-1}`。 | 150 |
+| `db/` | `models.py` | **数据库模型** — 定义表结构，导出 `init_db` 和 `get_connection`。 | 150 |
+| `db/` | `crud.py` | **CRUD 外观模式** — 统一导出子模块函数。 | 100 |
+| `db/` | `crud_*.py` | **CRUD 实现** — funds/holdings/nav/watchlist 具体实现。 | 150 |
+| `api/` | `routes.py` | **FastAPI 路由** — 定义 API 端点。 | 200 |
+| `api/` | `schemas.py` | **Pydantic 模型** — 请求/响应数据定义。 | 150 |
 
 ---
 
