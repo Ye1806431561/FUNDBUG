@@ -130,7 +130,9 @@ CREATE TABLE user_watchlist (
 | `engine/` | `nav_estimator.py` | NAV 估算核心算法 | 200 |
 | `engine/` | `error_correction.py` | 基于历史误差的修正 | 150 |
 | `db/` | `models.py` | SQLAlchemy 或原生 SQL 模型 | 150 |
-| `db/` | `crud.py` | 数据库增删改查封装 | 200 |
+| `db/` | `models.py` | SQLAlchemy 或原生 SQL 模型 | 150 |
+| `db/` | `crud.py` | **CRUD 外观模式 (Facade)** - 统一重新导出子模块函数 | 50 |
+| `db/` | `crud_*.py` | 具体实现：funds, holdings, nav, watchlist | 150 |
 | `api/` | `routes.py` | FastAPI 路由定义 | 150 |
 | `api/` | `schemas.py` | Pydantic 请求/响应模型 | 100 |
 
@@ -180,7 +182,8 @@ CREATE TABLE user_watchlist (
 | `src/engine/nav_estimator.py` | **NAV 估算核心算法**（146 行）— 导出 `estimate_fund_nav(fund_code)` 单基金估算、`estimate_all_watchlist()` 批量估算。内部 `_calculate_weighted_return` 纯函数计算加权涨跌幅和现金比例。公式：`预估净值 = 前一日净值 × (1 + 加权涨跌幅/100)`，未披露持仓视为现金 | → `src/data/realtime.py`, `src/db/crud.py` |
 | `src/engine/error_correction.py` | **EWA 误差修正模块**（103 行）— 导出 `calculate_ewa_bias(fund_code)` 计算历史误差的指数加权平均偏差、`apply_correction(nav, bias)` 纯函数修正净值、`correct_fund_estimate(fund_code, nav, return)` 完整修正流程、`update_actual_and_errors(fund_code, actual_nav, date)` 收盘后回填实际净值。公式：`EWA_t = α×error_t + (1-α)×EWA_{t-1}`，`α=0.3` | → `src/db/crud.py`, ← `config.EWA_ALPHA` |
 | `src/db/models.py` | **数据库表结构定义和初始化**（106 行）— 定义 5 张表的 `CREATE TABLE` SQL，导出 `init_db(db_path)` 建表函数和 `get_connection(db_path)` 连接函数。启用 `PRAGMA foreign_keys = ON` + `sqlite3.Row` factory | ← `config.DATABASE_PATH` |
-| `src/db/crud.py` | 数据库 CRUD 操作封装 | ← `src/db/models.py` |
+| `src/db/crud.py` | **CRUD 外观层** — 自身不含逻辑，仅导入并重新导出 `crud_*.py` 中的函数，保持对外接口不变。 | ← `src/db/models.py`, `src/db/crud_*.py` |
+| `src/db/crud_*.py` | **CRUD 实现层** — 拆分为 funds/holdings/nav/watchlist 4 个子模块。 | ← `src/db/models.py` |
 | `src/api/schemas.py` | **Pydantic 数据模型**（88 行）— 定义 6 个 API 交互模型：`AddFundRequest` (含 6 位代码校验), `FundInfo`, `FundHolding`, `NAVEstimate` (整合估算与修正数据), `NAVHistory`, `WatchlistItem`。自带 Mock 示例数据。 | 无 |
 | `src/api/routes.py` | **FastAPI 路由定义**（109 行）— 实现 8 个端点，涵盖关注列表增删改查、基金持仓、历史净值及集成了误差修正的实时估算。在添加关注时支持同步触发数据采集。 | → `src/db/crud.py`, `src/engine/*`, `src/data/*` |
 | `src/utils/helpers.py` | 通用辅助函数（如 retry_on_failure） | 无 |
@@ -226,8 +229,8 @@ CREATE TABLE user_watchlist (
 
 1. **数据库隔离**：
     - 为了避免测试污染开发环境数据库 (`data/fundbug.db`)，测试使用 **临时文件数据库** (`tempfile.mkstemp`)。
-    - **Dependency Injection**: 通过 `tests/conftest.py` 中的 `mock_db_connection` fixture，使用 `unittest.mock.patch` 自动拦截 `src.db.crud` 中的 `get_connection` 调用，将其重定向到临时数据库。
-    - 这种方式允许 `crud.py` 代码保持原样（导入生产环境配置），但在测试运行时自动切换上下文。
+    - **Dependency Injection**: 通过 `tests/conftest.py` 中的 `mock_db_connection` fixture，使用 `unittest.mock.patch` 拦截 `src.db.models.get_connection` (源头) 及所有 CRUD 子模块中的引用，将其重定向到临时数据库。
+    - 这种方式确保无论代码如何导入 `get_connection`，测试环境都能彻底隔离。
 
 2. **Fixture 管理**：
     - `test_db_path`: 创建并初始化临时数据库 schema，测试结束后自动清理文件。

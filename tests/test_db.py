@@ -81,8 +81,8 @@ def test_nav_estimates_cleanup():
     # Manually update time to be old
     from src.db.models import get_connection
     # We need the path from fixture, but we don't have it here directly without requesting it.
-    # Use crud.get_connection() which is patched
-    conn = crud.get_connection() 
+    # Use get_connection() which is patched in conftest to return the test connection
+    conn = get_connection() 
     cursor = conn.cursor()
     cursor.execute("UPDATE nav_estimates SET estimate_time = datetime('now', '-8 days')")
     conn.commit()
@@ -98,7 +98,7 @@ def test_nav_estimates_cleanup():
     # Check remaining
     estimates = crud.get_estimate_errors("001") # this filters by actual_nav IS NOT NULL, so won't show
     # But we can query
-    conn = crud.get_connection()
+    conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT count(*) as c FROM nav_estimates")
     count = cursor.fetchone()['c']

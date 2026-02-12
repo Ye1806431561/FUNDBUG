@@ -37,9 +37,17 @@ def test_db_path():
 
 @pytest.fixture(autouse=True)
 def mock_db_connection(test_db_path):
-    """Automatically patch get_connection in crud to use the test database."""
+    """Automatically patch get_connection in crud modules to use the test database."""
     def get_test_connection():
         return get_connection(test_db_path)
+    
+    # Patch in all sub-modules where get_connection is used
+    p1 = patch('src.db.crud_funds.get_connection', side_effect=get_test_connection)
+    p2 = patch('src.db.crud_holdings.get_connection', side_effect=get_test_connection)
+    p3 = patch('src.db.crud_nav.get_connection', side_effect=get_test_connection)
+    p4 = patch('src.db.crud_watchlist.get_connection', side_effect=get_test_connection)
+    # Also patch the source model for tests that use it directly
+    p5 = patch('src.db.models.get_connection', side_effect=get_test_connection)
         
-    with patch('src.db.crud.get_connection', side_effect=get_test_connection):
+    with p1, p2, p3, p4, p5:
         yield
