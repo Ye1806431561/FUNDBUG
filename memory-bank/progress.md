@@ -741,4 +741,59 @@ $ wc -l src/api/routes.py
 > **阶段 4（API 服务层）已全部完成，可以开始阶段 5（主入口与调度）。**
 
 ---
+
+## 2026-02-12 - 步骤 5.1: 创建主入口文件 (main.py) ✅
+
+### 完成内容
+
+1.  **实现 `main.py`**（89 行）：
+    -   使用 `FastAPI` 构建主应用，并注册 `src.api.routes` 路由。
+    -   启用 `lifespan` 钩子，统一管理数据库初始化 (`init_db`) 和调度器启停。
+    -   配置 `StaticFiles` 挂载 `frontend/` 目录。
+    -   集成 `APScheduler` 实现后台任务管理。
+
+2.  **定时任务配置**：
+    -   **持仓同步**：每日 08:30 自动拉取关注列表基金的持仓数据。
+    -   **盘中估算**：周一至周五 09:30-15:00 期间，每分钟触发一次批量估值。
+    -   **每日净值回填**：每日 18:00 自动回填实际净值并计算误差（占位任务）。
+    -   **数据清理**：每日 00:00 自动删除超过 7 天的估算记录。
+
+3.  **稳定性优化**：
+    -   实现 `is_trading_time()` 逻辑，确保计算引擎仅在交易窗口内运行。
+    -   将 `IntervalTrigger` 切换为 `CronTrigger`，并成功注册了 **4 个核心定时任务**。
+
+### 关键决策
+
+1.  **Lifespan 模式** — 弃用旧的 `startup/shutdown` 事件，改用 `lifespan` 异步上下文管理器，确保资源释放的确定性。
+2.  **双重交易时间校验** — 除了调度器的时间限制，在 `scheduled_intraday_estimation` 内部通过 `is_trading_time` 再次验证，防止非交易日（如法定节假日）触发不必要的请求。
+3.  **静态文件优先** — 将 `frontend/` 挂载到根目录 `/`，方便用户直接通过浏览器访问 UI。
+
+### 验证结果
+
+```bash
+$ PYTHONPATH=. .venv/bin/python main.py
+Application starting up...
+Added job "scheduled_holdings_update" to job store "default"
+Added job "scheduled_intraday_estimation" to job store "default"
+Added job "scheduled_nav_daily_update" to job store "default"
+Added job "scheduled_nav_cleanup" to job store "default"
+Scheduler started.
+Application startup complete.
+Uvicorn running on http://127.0.0.1:8000 ✅
 ```
+
+### 注意事项（供后续开发者）
+
+-   目前的 `CronTrigger` 仅针对常规工作日（周一至周五）。对于春节、国庆等非交易日，系统会因 `akshare` 获取不到新行情而输出 0 涨跌幅，虽不报错但浪费资源。未来可考虑引入万年历接口进一步优化。
+-   运行 `main.py` 前必须确保已安装 `apscheduler` 和 `uvicorn`。
+
+---
+
+## 阶段 5 进度
+
+| 步骤 | 内容 | 状态 |
+|------|------|------|
+| 5.1 | 主入口与调度 (main.py) | ✅ |
+| 5.2 | 测试基础设施 (tests/) | ⏳ |
+
+> **步骤 5.1 已完成，已准备好进行步骤 5.2 的测试基础设施搭建。**

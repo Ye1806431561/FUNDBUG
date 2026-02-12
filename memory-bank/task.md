@@ -16,12 +16,12 @@
 - [x] Phase 3: Calculation Engine
     - [x] 3.1 NAV Estimator
     - [x] 3.2 Error Correction
-- [/] Phase 4: API Layer
+- [x] Phase 4: API Layer
     - [x] 4.1 Schemas
-    - [ ] 4.2 Routes
-- [ ] Phase 5: Main App & Scheduler
-    - [ ] 5.1 Main entry point
-    - [ ] 5.2 Test infrastructure
+    - [x] 4.2 Routes
+- [x] Phase 5: Main App & Scheduler
+    - [x] 5.1 Main entry point
+    - [/] 5.2 Test infrastructure
 - [ ] Phase 6: Frontend
     - [ ] 6.1 HTML
     - [ ] 6.2 JS

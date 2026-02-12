@@ -157,7 +157,7 @@ CREATE TABLE user_watchlist (
 | 文件 | 用途 |
 |------|------|
 | `config.py` | **集中配置管理（全局唯一配置源）** — 管理 8 个配置项：数据库路径（`DATABASE_PATH`）、API 服务（`API_HOST`/`API_PORT`）、交易时间窗口（`TRADING_START`/`TRADING_END`）、更新频率（`UPDATE_INTERVAL_SECONDS=60s`）、数据保留策略（`DATA_RETENTION_DAYS=7`）、误差修正参数（`EWA_ALPHA=0.3`）。所有模块必须从此导入，禁止硬编码 |
-| `main.py` | **程序入口** — 初始化数据库、注册路由、配置定时任务、启动 uvicorn 服务 |
+| `main.py` | **程序入口** — 初始化数据库 (`init_db`)、注册路由、配置并启动 **4 个核心定时任务**（持仓更新、盘中估算、净值回填、数据清理）、启动 uvicorn 服务 |
 | `requirements.txt` | **依赖清单** — 9 个直接依赖，按功能分组（API/数据/计算/任务/前端/测试） |
 | `.gitignore` | **Git 忽略规则** — 排除 `.venv/`、`__pycache__/`、`.db` 文件、IDE 配置等 |
 | `CLAUDE.md` | **AI 开发者指令** — 项目级编码规范、架构约束、认知架构（AI 辅助开发时自动读取） |

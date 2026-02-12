@@ -56,6 +56,9 @@
 | AddFundRequest 强制正则校验 | 基金代码必须为 6 位数字，利用 Pydantic Field 直接实现入口防御 |
 | API 响应模型附带 Examples | 充分利用 Pydantic v2 `json_schema_extra` 提升 Swagger 文档可读性 |
 | 极致行数控制（Schema < 100 行） | 通过压缩非必要空行和分隔注释，确保在复杂业务场景下仍能遵守架构红线 |  
+| `main.py` 采用 `lifespan` 管理异步上下文 | 确保 APScheduler 在 FastAPI 启停时同步正确启动和关闭，避免资源泄漏 |
+| 任务调度使用 `CronTrigger` 替代 `IntervalTrigger` | `CronTrigger` 支持 `day_of_week` 且语义更清晰。在任务内部增加 `is_trading_time` 校验提供双重保障 |
+| 注册 4 个核心后台任务 | 包括持仓更新、盘中估算、每日净值回填和数据清理，全面覆盖系统运行需求 |
 
 ## Issues Encountered
 <!-- 
@@ -70,6 +73,7 @@
 |-------|------------|
 | `src/data/holdings.py` 缺少参数调用 | 修复了 `save_fund_holdings` 中调用 `crud.insert_holdings` 缺失 `fund_code` 参数的问题 |
 | AKShare 接口频繁断连 (RemoteDisconnected) | 观测到全量行情和单个行情接口在请求量大时极不稳定。系统通过降级机制（批量->逐个）和 ThreadPoolExecutor 并发抓取提高了存活率，但仍存在部分失败风险。 |
+| APScheduler `IntervalTrigger` 不支持 `day_of_week` | 切换为 `CronTrigger`，并在 `main.py` 中实现了 `is_trading_time()` 逻辑以在非交易时段静默。 |
 
 ## Resources
 <!-- 
