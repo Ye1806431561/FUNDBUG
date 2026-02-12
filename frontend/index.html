@@ -1,16 +1,49 @@
-<!-- frontend/index.html placeholder -->
-<!-- 将在步骤 6.1 中实现 -->
 <!DOCTYPE html>
 <html lang="zh-CN">
 
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FUNDBUG - 基金净值估算系统</title>
+    <meta name="description" content="基于 AKShare 的实时基金净值估算与误差修正系统">
+    <link rel="stylesheet" href="style.css">
 </head>
 
 <body>
-    <h1>FUNDBUG 基金净值估算系统</h1>
-    <p>前端界面待实现...</p>
+    <div class="container">
+        <header>
+            <h1>FUNDBUG</h1>
+            <div class="status-bar">
+                <span>系统状态: 运行中</span> |
+                <span>上次更新: <span id="last-update">从未</span></span>
+            </div>
+        </header>
+
+        <section class="add-fund-section">
+            <form id="add-fund-form" class="add-fund-form">
+                <input type="text" id="fund-code-input" placeholder="输入 6 位基金代码 (如: 000001)" required pattern="^\d{6}$"
+                    maxlength="6">
+                <button type="submit">添加关注</button>
+            </form>
+            <div id="error-message" class="negative"
+                style="display: none; margin-bottom: 1rem; text-align: center; font-size: 0.875rem;"></div>
+        </section>
+
+        <main>
+            <div id="watchlist-container" class="watchlist">
+                <!-- 预加载/空列表提示 -->
+                <div class="status-bar" style="text-align: center; padding: 2rem;">
+                    正在加载关注列表...
+                </div>
+            </div>
+        </main>
+
+        <footer>
+            <p>数据来源: AKShare & 东方财富 | 估算频率: 60s</p>
+            <p>基于指数加权平均 (EWA) 自动修正估算偏差</p>
+        </footer>
+    </div>
+    <script src="app.js"></script>
 </body>
 
 </html>

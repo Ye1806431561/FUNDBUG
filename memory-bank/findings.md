@@ -31,7 +31,10 @@
     - Standard pattern: python script.py <command> [args]
 -->
 <!-- Key discoveries during exploration -->
--
+- **前端设计美学**：为了提升本地工具的使用体验，采用了深色背景 (`#0f172a`) 配合渐变文字标题和卡片式布局，相比传统表格更具现代感和 scannability。
+- **实时性反馈**：在 `index.html` 中预留了 `last-update` 元素，用于向用户直观展示数据的新鲜度，这是交易辅助类工具的关键需求。
+- **防御性输入**：前端通过 HTML5 原生校验拦截非法基金代码，减少了无效的 API 请求压力。
+
 
 ## Technical Decisions
 <!-- 
@@ -76,6 +79,8 @@
 | `src/data/holdings.py` 缺少参数调用 | 修复了 `save_fund_holdings` 中调用 `crud.insert_holdings` 缺失 `fund_code` 参数的问题 |
 | AKShare 接口频繁断连 (RemoteDisconnected) | 观测到全量行情和单个行情接口在请求量大时极不稳定。系统通过降级机制（批量->逐个）和 ThreadPoolExecutor 并发抓取提高了存活率，但仍存在部分失败风险。 |
 | APScheduler `IntervalTrigger` 不支持 `day_of_week` | 切换为 `CronTrigger`，并在 `main.py` 中实现了 `is_trading_time()` 逻辑以在非交易时段静默。 |
+| **前端占位符加载体验** | 初始加载时 `watchlist-container` 显示“正在加载...”状态，提升了单页应用 (SPA) 风格的交互感知。|
+
 
 ## Resources
 <!-- 

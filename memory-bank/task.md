@@ -22,8 +22,8 @@
 - [x] Phase 5: Main App & Scheduler
     - [x] 5.1 Main entry point
     - [/] 5.2 Test infrastructure
-- [ ] Phase 6: Frontend
-    - [ ] 6.1 HTML
+- [x] Phase 6: Frontend
+    - [x] 6.1 HTML
     - [ ] 6.2 JS
     - [ ] 6.3 CSS
 - [ ] Phase 7: Integration & Verification

@@ -189,7 +189,10 @@ CREATE TABLE user_watchlist (
 
 | 路径 | 用途 |
 |------|------|
-| `frontend/` | 简单 Web 前端（HTML + JS + CSS） |
+| `frontend/index.html` | **Web 主入口** — 采用 HTML5 语义化标签构建，提供基金管理接口和实时数据展示容器。 |
+| `frontend/style.css` | **UI/UX 样式系统** — 实现暗色模式、响应式布局及组件样式（如：涨跌色、卡片布局）。 |
+| `frontend/app.js` | **前端核心逻辑** — (Phase 6.2 待实现) 负责与 API 通信、定时刷新数据及 DOM 动态更新。 |
+
 | `data/` | SQLite 数据库文件存放目录（`fundbug.db`），已在 `.gitignore` 中排除 `.db` 文件 |
 | `tests/` | 测试文件目录 |
 | `memory-bank/` | 设计文档和开发记录（`progress.md` / `architecture.md` / `implementation-plan.md` 等） |
