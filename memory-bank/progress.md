@@ -1099,3 +1099,14 @@ $ pytest tests/test_async_realtime.py -v
 
 ---
 
+## 2026-02-13 - 修复: main.py 缺少 asyncio 导入 ✅
+
+### 完成内容
+1. **修复 `main.py`**：
+    - 手动添加了 `import asyncio`，解决了因缺少该模块导致的 `NameError: name 'asyncio' is not defined` 错误。
+    - 该错误影响了 `lifespan` 中异步任务的上下文管理。
+
+### 验证结果
+- 用户手动验证修复有效。
+
+
