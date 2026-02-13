@@ -300,3 +300,197 @@ CREATE TABLE user_watchlist (
 - **状态层**：`--success`, `--danger` (表示成功/失败)
 - **实现**：`style.css` 中定义映射关系，JS 逻辑只操作 `.up/.down` 类名，不直接操作颜色值。
 
+---
+
+## 准实时数据架构 (Real-time Data Architecture)
+
+### 核心设计：Producer-Consumer 模式
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                  AsyncRealtimeProvider (单例)                 │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │ _fetch_worker() 后台循环:                            │   │
+│  │   1. asyncio.sleep(1s + jitter)                     │   │
+│  │   2. 线程池执行: ak.stock_bid_ask_em(关注列表)      │   │
+│  │   3. 解析 DataFrame → 更新 quote_cache              │   │
+│  │   4. 熔断检测: 失败 ≥3 次 → 指数退避               │   │
+│  └──────────────────────────────────────────────────────┘   │
+│                                                              │
+│  内存缓存结构 (threading.RLock 保护):                        │
+│  quote_cache = {                                             │
+│    "000001": {"current_price": 10.5, "change_percent": 1.2},│
+│    "600519": {"current_price": 1800, "change_percent": -1.0}│
+│  }                                                           │
+└─────────────────────────────────────────────────────────────┘
+                            ↓
+┌─────────────────────────────────────────────────────────────┐
+│         定时任务触发 (APScheduler - 每 3 秒)                 │
+│  scheduled_intraday_estimation()                             │
+│    ↓                                                         │
+│  nav_estimator.estimate_all_watchlist()                      │
+└─────────────────────────────────────────────────────────────┘
+                            ↓
+┌─────────────────────────────────────────────────────────────┐
+│              单基金估算 (estimate_fund_nav)                  │
+│  1. holdings = crud.get_latest_holdings(fund_code)           │
+│  2. fund_info = crud.get_fund(fund_code)                     │
+│  3. provider = AsyncRealtimeProvider.get_instance()          │
+│  4. for holding in holdings:                                 │
+│       cached = provider.get_cached_quote(stock_code)  # O(1) │
+│  5. weighted_return = Σ(weight × change) / 100               │
+│  6. estimated_nav = latest_nav × (1 + weighted_return / 100) │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 关键架构决策
+
+#### 1. 从全量拉取切换到关注列表模式
+
+**背景**: 初始设计每秒拉取全市场 5000+ 股票，3-5 分钟内必被封 IP。
+
+**解决方案**:
+- 改为仅拉取用户关注基金的持仓股票（通常 20-50 只）
+- 使用 `ak.stock_bid_ask_em` 逐个拉取，配合 `ThreadPoolExecutor` 并发（max_workers=10）
+- 在 `main.py` 启动时从数据库注入关注列表到 `AsyncRealtimeProvider`
+
+**权衡**:
+- ✅ 避免 IP 封禁，系统可持续运行
+- ✅ 降低网络带宽和内存占用
+- ❌ 牺牲了"全市场数据"的能力（但实际业务不需要）
+
+#### 2. Asyncio + Threading 混合架构
+
+**问题**: AKShare 底层是同步的 `requests`，直接在 asyncio 中调用会阻塞事件循环。
+
+**解决方案**:
+```python
+async def _fetch_worker(self):
+    while self.is_running:
+        await asyncio.sleep(1.0)  # 异步等待
+        loop = asyncio.get_running_loop()
+        df = await loop.run_in_executor(
+            self.executor,           # ThreadPoolExecutor
+            self._fetch_data_safe    # 同步函数 (调用 AKShare)
+        )
+```
+
+**关键点**:
+- `asyncio` 负责调度和定时
+- `ThreadPoolExecutor` 负责执行阻塞 I/O
+- 两者通过 `run_in_executor` 桥接
+
+#### 3. 线程安全的缓存管理
+
+**问题**: `quote_cache` 在后台线程更新，在主线程读取，存在竞态条件。
+
+**解决方案**:
+```python
+class AsyncRealtimeProvider:
+    def __init__(self):
+        self._cache_lock = threading.RLock()  # 可重入锁
+        self.quote_cache = {}
+
+    def get_cached_quote(self, stock_code: str):
+        with self._cache_lock:
+            return self.quote_cache.get(stock_code)
+
+    def _update_cache(self, df: pd.DataFrame):
+        # ... 构建 new_cache
+        with self._cache_lock:
+            self.quote_cache = new_cache
+            self.last_update_time = now
+```
+
+**为什么用 RLock**:
+- 允许同一线程多次获取锁（可重入）
+- 防止死锁（如果 `_update_cache` 内部调用其他需要锁的方法）
+
+#### 4. 启动时序的微妙之处
+
+**错误做法**:
+```python
+# ❌ 在 lifespan 中调用 provider.start()
+async def lifespan(app: FastAPI):
+    provider = AsyncRealtimeProvider.get_instance()
+    provider.start()  # 内部调用 asyncio.get_running_loop()
+```
+
+**问题**: `lifespan` 是 async 函数，但在 uvicorn 启动时事件循环可能尚未完全就绪，导致 `RuntimeError: no running event loop`。
+
+**正确做法**:
+```python
+# ✅ 直接在 lifespan 的 async context 中创建任务
+async def lifespan(app: FastAPI):
+    provider = AsyncRealtimeProvider.get_instance()
+    loop = asyncio.get_running_loop()  # 此时 loop 已就绪
+    provider._background_task = loop.create_task(
+        provider._fetch_worker()
+    )
+    provider.is_running = True
+```
+
+#### 5. 缓存就绪检测
+
+**问题**: `AsyncRealtimeProvider` 每 1 秒更新缓存，但 `scheduled_intraday_estimation` 每 3 秒读取缓存。如果缓存在前 5 分钟都是空的（首次拉取需要 2-3 秒），前几次估算会因为 `missing_count > 50%` 而返回错误数据。
+
+**解决方案**:
+```python
+async def lifespan(app: FastAPI):
+    # ... 启动 AsyncRealtimeProvider
+
+    # 等待首次缓存就绪
+    logger.info("Waiting for initial cache to be ready...")
+    for attempt in range(30):  # 最多等待 30 秒
+        if realtime_provider.quote_cache:
+            logger.info(f"✓ Cache ready with {len(realtime_provider.quote_cache)} stocks")
+            break
+        await asyncio.sleep(1)
+    else:
+        logger.warning("⚠️ Cache not ready after 30s")
+
+    # 启动调度器
+    scheduler.start()
+```
+
+#### 6. 指数退避熔断器
+
+**问题**: 当前熔断仅延长到 5 秒，无法应对 IP 封禁（通常需 30-60 分钟）。
+
+**解决方案**:
+```python
+if self.consecutive_failures >= 3:
+    # 5s -> 10s -> 20s -> 40s -> ... -> 最多 5 分钟
+    backoff = min(300, 5 * (2 ** (self.consecutive_failures - 3)))
+    logger.error(
+        f"🚨 High failure rate ({self.consecutive_failures} consecutive failures)! "
+        f"Backing off for {backoff}s. Possible IP ban."
+    )
+    await asyncio.sleep(backoff)
+    continue  # 跳过本次拉取
+```
+
+**效果**: 系统在被封禁后能自动降速并逐步恢复，避免持续失败。
+
+### 性能指标
+
+| 指标 | 数值 | 说明 |
+|------|------|------|
+| **行情更新频率** | ~1 Hz (1s + jitter) | AsyncRealtimeProvider 后台循环 |
+| **估算触发频率** | 3s (交易时间) | APScheduler CronTrigger |
+| **单次估算耗时** | <10ms | 纯内存操作 (无网络 I/O) |
+| **批量估算耗时** | <100ms (10 只基金) | 线性扩展，主要是数据库查询 |
+| **缓存数据量** | ~50 条 (关注列表) | 每条 ~100 bytes，总计 ~5KB |
+| **内存占用** | ~112MB (稳定) | 压力测试验证 |
+
+### 潜在风险与缓解策略
+
+| 风险 | 缓解策略 |
+|------|----------|
+| **AKShare 接口不稳定** | 指数退避熔断器 + 降级逻辑 |
+| **IP 封禁** | 仅拉取关注列表 + 代理池（未实现） |
+| **内存泄漏** | 线程池 `shutdown()` + 原子缓存替换 |
+| **数据库锁竞争** | 考虑批量写入或使用 WAL 模式 |
+| **缓存过期** | 5 分钟过期检测 + 用户提示 |
+
+---

@@ -997,3 +997,105 @@ $ python stress_test_1Hz.py
 
 ---
 
+## 2026-02-13 - 准实时数据系统深度代码审查与修复 ✅
+
+### 背景
+
+在实时数据获取系统上线后，进行了全面的代码审查，发现了 8 个关键问题（4 个 Critical + 4 个 Important），涉及 asyncio 运行时、资源泄漏、反爬策略和线程安全等核心领域。
+
+### 完成内容
+
+#### 🔴 Critical 修复（必须立即完成）
+
+1.  **修复线程池泄漏** - [src/data/realtime.py:73](src/data/realtime.py#L73)
+    -   **问题**: `ThreadPoolExecutor` 在 `stop()` 时未调用 `shutdown()`，长时间运行会累积僵尸线程
+    -   **修复**: 在 `stop()` 方法中添加 `self.executor.shutdown(wait=False)`
+    -   **影响**: 防止资源耗尽导致 `OSError: Too many open files`
+
+2.  **修复 asyncio 启动逻辑** - [main.py:67-101](main.py#L67-L101)
+    -   **问题**: `realtime_provider.start()` 内部调用 `asyncio.get_running_loop()` 在 lifespan 启动时可能失败
+    -   **修复**:
+        -   删除 `start()` 方法，直接在 `lifespan` 的 async context 中创建任务
+        -   添加首次缓存就绪检测（最多等待 30 秒）
+        -   实现优雅关闭逻辑（等待后台任务完全停止）
+    -   **影响**: 确保应用启动成功，避免前几次估算因缓存未就绪而失败
+
+3.  **实现真正的反爬策略** - [src/data/realtime.py](src/data/realtime.py) + [main.py](main.py)
+    -   **问题**: 每秒拉取全市场 5000+ 股票，3-5 分钟内必被封 IP
+    -   **修复**:
+        -   改为仅拉取关注列表股票（"模式 A"）
+        -   使用 `ak.stock_bid_ask_em` 并发请求（ThreadPoolExecutor max_workers=10）
+        -   在 `main.py` 启动时从数据库注入关注列表
+    -   **影响**: 从全量拉取（5000 股）降级到关注列表（20-50 股），避免 IP 封禁
+
+4.  **改进熔断机制** - [src/data/realtime.py:87-146](src/data/realtime.py#L87-L146)
+    -   **问题**: 当前熔断仅延长到 5 秒，无法应对 IP 封禁（通常需 30-60 分钟）
+    -   **修复**: 实现指数退避（5s → 10s → 20s → 40s → ... → 最多 5 分钟）
+    -   **影响**: 系统在被封禁后能自动降速并逐步恢复
+
+#### 🟡 Important 修复（强烈建议完成）
+
+5.  **添加缓存读写锁** - [src/data/realtime.py](src/data/realtime.py)
+    -   **问题**: `quote_cache` 的读写未加锁，存在竞态条件
+    -   **修复**:
+        -   添加 `threading.RLock()` 保护 `quote_cache`
+        -   在 `get_cached_quote()` 和 `_update_cache()` 中使用锁
+    -   **影响**: 防止多线程环境下的数据不一致
+
+6.  **修复单例模式** - [src/data/realtime.py:36-52](src/data/realtime.py#L36-L52)
+    -   **问题**: `_init_done` 是实例变量，多线程环境下可能重复初始化
+    -   **修复**: 实现线程安全的 Double-Check Locking
+    -   **影响**: 确保单例模式在多线程环境下的正确性
+
+7.  **统一错误日志** - [src/data/realtime.py](src/data/realtime.py)
+    -   **问题**: 多处使用 `logger.error(f"... {e}")` 丢失堆栈信息
+    -   **修复**: 将所有 `logger.error` 改为 `logger.exception`
+    -   **影响**: 生产环境可以获取完整堆栈信息，便于排查问题
+
+8.  **添加缓存过期检测** - [src/engine/nav_estimator.py:89-93](src/engine/nav_estimator.py#L89-L93)
+    -   **问题**: 休市时使用过期数据，导致估值错误
+    -   **修复**: 在 `estimate_fund_nav()` 中添加 5 分钟过期检查
+    -   **影响**: 提醒用户缓存过期，避免使用陈旧数据
+
+### 关键决策
+
+1.  **从全量拉取切换到关注列表模式** — 这是最关键的架构调整。虽然牺牲了"全市场数据"的能力，但换来了系统的稳定性和可持续运行。
+2.  **线程安全优先** — 在 asyncio + threading 混合架构中，必须使用 `threading.RLock()` 保护共享状态，即使 Python 的 GIL 提供了一定保护。
+3.  **优雅关闭** — 在 `lifespan` 的 shutdown 阶段等待后台任务完全停止，避免资源泄漏和数据丢失。
+
+### 测试结果
+
+```bash
+# 单元测试
+$ pytest tests/test_engine.py -v
+16/16 passed ✅
+
+$ pytest tests/test_async_realtime.py -v
+6/6 passed ✅
+
+# 修复后的测试也需要更新
+- 修复了 test_engine.py 中缺少 datetime 导入的问题
+- 修复了 test_async_realtime.py 中对已删除 start() 方法的引用
+- 修复了 test_async_realtime.py 中对新 _fetch_data_safe() 实现的 Mock
+```
+
+### 架构洞察
+
+**Producer-Consumer 模式的时序陷阱**:
+- **问题**: `AsyncRealtimeProvider` 每 1 秒更新缓存，但 `scheduled_intraday_estimation` 每 3 秒读取缓存。如果缓存在前 5 分钟都是空的（首次拉取需要 2-3 秒），前几次估算会因为 `missing_count > 50%` 而返回错误数据。
+- **解决**: 在 `lifespan` 启动时等待首次缓存就绪（最多 30 秒），确保调度器启动时缓存已有数据。
+
+**Asyncio 启动时机的微妙之处**:
+- **错误做法**: 在 `lifespan` 中调用 `provider.start()`，内部调用 `asyncio.get_running_loop()` 和 `loop.create_task()`
+- **正确做法**: 直接在 `lifespan` 的 async context 中获取 loop 并创建任务
+- **原因**: `lifespan` 是 async 函数，但在 uvicorn 启动时事件循环可能尚未完全就绪，导致 `RuntimeError`
+
+### 注意事项（供后续开发者）
+
+1.  **关注列表更新**: 当用户添加/删除基金时，需要调用 `realtime_provider.set_watchlist()` 更新监控列表，否则新基金的行情不会被拉取。
+2.  **IP 封禁应对**: 即使改为关注列表模式，如果用户关注了 100+ 只基金，仍可能触发封禁。建议在生产环境使用代理池或降低频率。
+3.  **缓存过期阈值**: 当前设置为 5 分钟，可根据实际需求调整（如交易时间内 1 分钟，休市时 1 小时）。
+4.  **测试环境隔离**: 所有涉及 `AsyncRealtimeProvider` 的测试都需要 Mock `last_update_time`，否则会因为类型不匹配而失败。
+
+---
+

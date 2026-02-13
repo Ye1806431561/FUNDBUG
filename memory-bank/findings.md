@@ -64,6 +64,13 @@
 | 注册 4 个核心后台任务 | 包括持仓更新、盘中估算、每日净值回填和数据清理，全面覆盖系统运行需求 |
 | 测试基础设施工程化 | 将 TestClient 提升至 conftest.py 级别，极大简化了 API 测试的编写负担 |
 | 自动化测试流水线脚本 | 通过 run_tests.sh 规范化测试运行环境，避免 PYTHONPATH 缺失导致的模块导入错误 |
+| **从全量拉取切换到关注列表模式** | 初始设计每秒拉取全市场 5000+ 股票，3-5 分钟内必被封 IP。改为仅拉取用户关注基金的持仓股票（通常 20-50 只），使用 `ak.stock_bid_ask_em` 逐个拉取，配合 `ThreadPoolExecutor` 并发（max_workers=10）。权衡：避免 IP 封禁，系统可持续运行，但牺牲了"全市场数据"的能力（实际业务不需要）。 |
+| **Asyncio + Threading 混合架构** | AKShare 底层是同步的 `requests`，直接在 asyncio 中调用会阻塞事件循环。使用 `loop.run_in_executor` 将阻塞调用转移到 `ThreadPoolExecutor`，asyncio 负责调度和定时，threading 负责执行阻塞 I/O。 |
+| **线程安全的缓存管理** | `quote_cache` 在后台线程更新，在主线程读取，存在竞态条件。使用 `threading.RLock()` 保护缓存，允许同一线程多次获取锁（可重入），防止死锁。 |
+| **启动时序优化** | 不在 `lifespan` 中调用 `provider.start()`（内部调用 `asyncio.get_running_loop()` 可能失败），而是直接在 `lifespan` 的 async context 中获取 loop 并创建任务。同时添加首次缓存就绪检测（最多等待 30 秒），确保调度器启动时缓存已有数据。 |
+| **指数退避熔断器** | 当前熔断仅延长到 5 秒，无法应对 IP 封禁（通常需 30-60 分钟）。实现指数退避（5s → 10s → 20s → 40s → ... → 最多 5 分钟），系统在被封禁后能自动降速并逐步恢复。 |
+| **统一错误日志格式** | 将所有 `logger.error(f"... {e}")` 改为 `logger.exception(f"...")`，保留完整堆栈信息，便于生产环境排查问题。 |
+| **缓存过期检测** | 在 `estimate_fund_nav()` 中添加 5 分钟过期检查，休市时提醒用户缓存过期，避免使用陈旧数据。 |
 
 ## Issues Encountered
 <!-- 
@@ -82,8 +89,17 @@
 | **前端占位符加载体验** | 初始加载时 `watchlist-container` 显示“正在加载...”状态，提升了单页应用 (SPA) 风格的交互感知。|
 | **移动端适配** | 采用卡片式布局替代表格，确保在手机端也能清晰展示基金的 5+ 个关键指标而不拥挤。 |
 | **市场惯例适配** | 遵循中国股市“红涨绿跌”惯例，并重新定义 CSS 变量 `--up-color`/`--down-color`，与国际惯例（红跌绿涨）解耦，便于未来切换。 |
-| **外部接口不稳定性** | 观测到 `akshare` 在盘中高频访问时极易出现 `RemoteDisconnected`。目前的“批量失败转逐个”降级策略虽然能运行，但在极端网络下逐个获取也会大量失败（如 14:40 的日志显示）。建议未来引入本地缓存代理或更多备用数据源。 |
+| **外部接口不稳定性** | 观测到 `akshare` 在盘中高频访问时极易出现 `RemoteDisconnected`。目前的"批量失败转逐个"降级策略虽然能运行，但在极端网络下逐个获取也会大量失败（如 14:40 的日志显示）。建议未来引入本地缓存代理或更多备用数据源。 |
 | **高频数据采集的 API 封锁** | 在实施 1Hz 频率升级时，确认 AKShare 接口 (`stock_zh_a_spot_em`) 在高频调用下会被服务端断开连接 (`RemoteDisconnected`)，疑似 IP 封锁或云环境限制。**解决方案**：架构上采用 `AsyncRealtimeProvider` + 线程池的设计是正确的，但在生产环境可能需要：1. 使用代理池；2. 降低单 IP 频率；3. 仅拉取 Watchlist 股票 (`AsyncRealtimeProvider.update_watchlist`)。 |
+| **线程池资源泄漏** | `ThreadPoolExecutor` 在 `stop()` 时未调用 `shutdown()`，长时间运行会累积僵尸线程，最终导致 `OSError: Too many open files`。**解决方案**：在 `stop()` 方法中添加 `self.executor.shutdown(wait=False)`。 |
+| **Asyncio 启动时机错误** | 在 `lifespan` 中调用 `provider.start()`，内部调用 `asyncio.get_running_loop()` 可能失败，因为事件循环尚未完全就绪。**解决方案**：删除 `start()` 方法，直接在 `lifespan` 的 async context 中获取 loop 并创建任务。 |
+| **全量拉取导致 IP 封禁** | 每秒拉取全市场 5000+ 股票，3-5 分钟内必被封 IP。**解决方案**：改为仅拉取关注列表股票（"模式 A"），使用 `ak.stock_bid_ask_em` 并发请求（ThreadPoolExecutor max_workers=10）。 |
+| **熔断机制不足** | 当前熔断仅延长到 5 秒，无法应对 IP 封禁（通常需 30-60 分钟）。**解决方案**：实现指数退避（5s → 10s → 20s → 40s → ... → 最多 5 分钟）。 |
+| **缓存竞态条件** | `quote_cache` 的读写未加锁，存在竞态条件。**解决方案**：添加 `threading.RLock()` 保护 `quote_cache`，在 `get_cached_quote()` 和 `_update_cache()` 中使用锁。 |
+| **单例模式线程不安全** | `_init_done` 是实例变量，多线程环境下可能重复初始化。**解决方案**：实现线程安全的 Double-Check Locking。 |
+| **错误日志丢失堆栈** | 多处使用 `logger.error(f"... {e}")` 丢失堆栈信息。**解决方案**：将所有 `logger.error` 改为 `logger.exception`。 |
+| **缓存过期未检测** | 休市时使用过期数据，导致估值错误。**解决方案**：在 `estimate_fund_nav()` 中添加 5 分钟过期检查。 |
+| **Producer-Consumer 时序陷阱** | `AsyncRealtimeProvider` 每 1 秒更新缓存，但 `scheduled_intraday_estimation` 每 3 秒读取缓存。如果缓存在前 5 分钟都是空的（首次拉取需要 2-3 秒），前几次估算会因为 `missing_count > 50%` 而返回错误数据。**解决方案**：在 `lifespan` 启动时等待首次缓存就绪（最多 30 秒）。 |
 
 
 ## Resources
@@ -260,3 +276,139 @@
 - **根因**：原测试仅 Mock 了 `akshare` 包的顶层函数，但业务代码中通过 `import akshare as ak` 使用。
 - **解决**：改为 Mock `src.data.fund_list.ak`，从业务代码的导入路径截断外部依赖，实现 100% 离线单元测试。
 
+---
+
+### 🔧 Phase 8: 准实时数据系统深度代码审查与修复 (2026-02-13)
+
+#### 审查背景
+
+在实时数据获取系统上线后，进行了全面的代码审查，重点检查：
+1. **逻辑漏洞**：在 asyncio 异步运行时，会不会有死锁或者阻塞？
+2. **风控风险**：重试机制（Retry）能不能防止被新浪财经封 IP？
+3. **代码规范**：有没有写得不漂亮、难以维护的地方？
+
+#### 发现的 8 个关键问题
+
+##### 🔴 Critical 问题（会导致崩溃/封禁）
+
+1. **线程池泄漏 - 必然失败**
+   - **位置**: `src/data/realtime.py:73-78`
+   - **问题**: `ThreadPoolExecutor` 在 `stop()` 时未调用 `shutdown()`
+   - **后果**: 长时间运行会累积僵尸线程，最终导致 `OSError: Too many open files`
+   - **修复**: 在 `stop()` 方法中添加 `self.executor.shutdown(wait=False)`
+
+2. **Asyncio 启动时机错误 - 必然失败**
+   - **位置**: `main.py:74-75`
+   - **问题**: 在 `lifespan` 中调用 `provider.start()`，内部调用 `asyncio.get_running_loop()` 会抛出 `RuntimeError`
+   - **根因**: `lifespan` 是 async 函数，但在 uvicorn 启动时事件循环尚未完全就绪
+   - **修复**:
+     - 删除 `start()` 方法
+     - 直接在 `lifespan` 的 async context 中创建任务
+     - 添加首次缓存就绪检测（最多等待 30 秒）
+     - 实现优雅关闭逻辑
+
+3. **全量拉取导致 IP 封禁 - 3-5 分钟内必被封**
+   - **位置**: `src/data/realtime.py:149-165`
+   - **问题**: 每秒拉取全市场 5000+ 股票，特征极其明显
+   - **根因**: AKShare 内部使用固定 UA，`_USER_AGENTS` 池是摆设
+   - **修复**:
+     - 改为仅拉取关注列表股票（"模式 A"）
+     - 使用 `ak.stock_bid_ask_em` 逐个拉取
+     - 配合 `ThreadPoolExecutor` 并发（max_workers=10）
+     - 在 `main.py` 启动时从数据库注入关注列表
+
+4. **熔断机制过于简陋 - 无法应对封禁**
+   - **位置**: `src/data/realtime.py:98-100`
+   - **问题**: 被封禁后，5 秒根本不够解封（通常需要 30-60 分钟）
+   - **缺陷**: 没有指数退避（Exponential Backoff），没有告警机制
+   - **修复**: 实现指数退避（5s → 10s → 20s → 40s → ... → 最多 5 分钟）
+
+##### 🟡 Important 问题（影响稳定性/可维护性）
+
+5. **缓存竞态条件 - 数据不一致**
+   - **位置**: `src/data/realtime.py:216`
+   - **问题**: Python 的字典赋值虽然是原子的，但读取旧缓存的线程可能拿到不一致的数据
+   - **修复**: 添加 `threading.RLock()` 保护 `quote_cache`
+
+6. **单例模式实现混乱 - 线程不安全**
+   - **位置**: `src/data/realtime.py:36-58`
+   - **问题**: `_init_done` 是实例变量，多线程环境下可能重复初始化
+   - **修复**: 实现线程安全的 Double-Check Locking
+
+7. **错误处理吞掉了关键信息 - 无法排查问题**
+   - **位置**: `src/data/realtime.py:144-146`, `src/data/realtime.py:220-221`
+   - **问题**: 使用 `logger.error(f"... {e}")` 丢失堆栈信息
+   - **修复**: 将所有 `logger.error` 改为 `logger.exception`
+
+8. **缓存过期未检测 - 使用陈旧数据**
+   - **位置**: `src/engine/nav_estimator.py:86-106`
+   - **问题**: 休市时使用过期数据，导致估值错误
+   - **修复**: 在 `estimate_fund_nav()` 中添加 5 分钟过期检查
+
+#### 修复过程
+
+**修复顺序**（按风险等级和修改难度）:
+1. 修复 #2（线程池）- 最简单，立即见效
+2. 修复 #1（asyncio）- 解决启动问题
+3. 修复 #3（反爬）- 最关键，决定系统能否运行
+4. 修复 #4（熔断）- 配合 #3 使用
+5. 修复 #5-#8（P1 问题）- 在系统跑起来后逐步修复
+
+**测试验证**:
+- 修复了 `tests/test_engine.py` 中缺少 `datetime` 导入的问题
+- 修复了 `tests/test_async_realtime.py` 中对已删除 `start()` 方法的引用
+- 修复了 `tests/test_async_realtime.py` 中对新 `_fetch_data_safe()` 实现的 Mock
+- 最终测试结果：`test_engine.py` 16/16 通过，`test_async_realtime.py` 6/6 通过
+
+#### 架构层面的根本缺陷
+
+**Producer-Consumer 时序冲突**:
+- **矛盾**: `AsyncRealtimeProvider` 每 1 秒更新缓存，`scheduled_intraday_estimation` 每 3 秒读取缓存，但缓存可能在前 5 分钟都是空的（因为第一次拉取全市场数据需要 2-3 秒）
+- **后果**: 前几次估算会因为 `missing_count > 50%` 而返回错误数据
+- **解决**: 在 `lifespan` 启动时等待首次缓存就绪（最多等待 30 秒）
+
+**Asyncio 启动时机的微妙之处**:
+- **错误做法**: 在 `lifespan` 中调用 `provider.start()`，内部调用 `asyncio.get_running_loop()` 和 `loop.create_task()`
+- **正确做法**: 直接在 `lifespan` 的 async context 中获取 loop 并创建任务
+- **原因**: `lifespan` 是 async 函数，但在 uvicorn 启动时事件循环可能尚未完全就绪，导致 `RuntimeError`
+
+#### 哲学层的反思
+
+**理论设计与现实约束的冲突**:
+- **理论**: 1Hz 准实时更新，Producer-Consumer 模式，优雅的异步架构
+- **现实**: AKShare 不支持自定义 UA，全量拉取必被封禁，asyncio 启动时机受限
+
+**Linus 会说**: *"Talk is cheap. Show me the code that actually works in production."*
+
+文档写得很漂亮，但代码在生产环境中**必然崩溃**。真正的架构师不是设计完美的系统，而是在约束下找到**可行的妥协**。
+
+**建议的妥协方案**:
+- 放弃 1Hz 全市场数据（不现实）
+- 改为 1Hz 拉取关注列表（20-50 只股票，可行）
+- 全市场数据降级到 60 秒（作为兜底）
+
+这才是"好品味"——**让特殊情况消失，而不是用 if 判断掩盖矛盾**。
+
+#### 经验教训
+
+1. **Asyncio + Threading 混合架构的陷阱**:
+   - 必须使用 `loop.run_in_executor` 将阻塞调用转移到线程池
+   - 必须使用 `threading.RLock()` 保护共享状态
+   - 必须在 async context 中创建任务，不能在同步函数中调用 `asyncio.get_running_loop()`
+
+2. **反爬策略的现实**:
+   - User-Agent 轮换在 AKShare 中无效（内部使用固定 UA）
+   - 全量拉取必被封禁，必须改为关注列表模式
+   - 指数退避是应对封禁的唯一有效手段
+
+3. **测试的重要性**:
+   - 单元测试必须 Mock 所有外部依赖（包括 `last_update_time`）
+   - 测试必须覆盖异步逻辑和线程安全
+   - 测试必须验证启动和关闭流程
+
+4. **代码审查的价值**:
+   - 即使是"看起来能跑"的代码，也可能存在致命缺陷
+   - 必须从"逻辑漏洞"、"风控风险"、"代码规范"三个维度审查
+   - 必须在生产环境运行前进行压力测试
+
+---

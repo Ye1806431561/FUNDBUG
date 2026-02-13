@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 import uvicorn
-
+import asyncio
 from config import API_HOST, API_PORT, UPDATE_INTERVAL_SECONDS
 from src.db.models import init_db
 from src.api.routes import router
@@ -69,36 +69,76 @@ async def lifespan(app: FastAPI):
     # Startup: 初始化数据库并启动调度器
     logger.info("Application starting up...")
     init_db()
-    
-    # 启动实时数据提供者 (后台异步任务)
+
+    # 获取 AsyncRealtimeProvider 实例
     realtime_provider = AsyncRealtimeProvider.get_instance()
-    realtime_provider.start()
-    
+
+    # 从数据库获取所有需要监控的股票
+    logger.info("Building watchlist from database...")
+    watchlist_funds = crud.get_watchlist()
+    all_stock_codes = set()
+
+    for fund in watchlist_funds:
+        holdings = crud.get_latest_holdings(fund['fund_code'])
+        for h in holdings:
+            all_stock_codes.add(str(h['stock_code']))
+
+    realtime_provider.set_watchlist(list(all_stock_codes))
+    logger.info(f"Monitoring {len(all_stock_codes)} stocks from {len(watchlist_funds)} funds")
+
+    # 启动实时数据提供者 (后台异步任务)
+    loop = asyncio.get_running_loop()
+    realtime_provider._background_task = loop.create_task(
+        realtime_provider._fetch_worker()
+    )
+    realtime_provider.is_running = True
+    logger.info("AsyncRealtimeProvider background task started.")
+
+    # 等待首次缓存就绪（避免前几次估算失败）
+    logger.info("Waiting for initial cache to be ready...")
+    for attempt in range(30):  # 最多等待 30 秒
+        if realtime_provider.quote_cache:
+            logger.info(f"✓ Cache ready with {len(realtime_provider.quote_cache)} stocks")
+            break
+        await asyncio.sleep(1)
+    else:
+        logger.warning("⚠️ Cache not ready after 30s, proceeding anyway")
+
     # 1. 注册持仓更新任务 (每日 08:30)
     scheduler.add_job(scheduled_holdings_update, CronTrigger(hour=8, minute=30))
-    
+
     # 2. 注册盘中估算任务 (周一至周五 09:30-15:00, 每3秒执行一次)
     # 配合 AsyncRealtimeProvider 的 1 秒级数据更新
     scheduler.add_job(
         scheduled_intraday_estimation,
         CronTrigger(day_of_week='mon-fri', hour='9-15', second='*/3'),
     )
-    
+
     # 3. 注册每日净值回填任务 (每日 18:00)
     scheduler.add_job(scheduled_nav_daily_update, CronTrigger(hour=18, minute=0))
-    
+
     # 4. 注册清理任务 (每日 00:00)
     scheduler.add_job(scheduled_nav_cleanup, CronTrigger(hour=0, minute=0))
-    
+
     scheduler.start()
     logger.info("Scheduler started.")
-    
+
     yield
-    
+
     # Shutdown: 关闭调度器和数据提供者
     logger.info("Application shutting down...")
     scheduler.shutdown()
     realtime_provider.stop()
+
+    # 等待后台任务完全停止
+    if realtime_provider._background_task:
+        try:
+            await asyncio.wait_for(realtime_provider._background_task, timeout=5.0)
+            logger.info("Background task stopped gracefully")
+        except asyncio.TimeoutError:
+            logger.warning("Background task did not stop within 5s")
+        except asyncio.CancelledError:
+            logger.info("Background task cancelled successfully")
 
 app = FastAPI(title="FUNDBUG API", lifespan=lifespan)
 

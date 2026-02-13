@@ -7,6 +7,7 @@ tests/test_engine.py - NAV 估算引擎单元测试
 
 import pytest
 import pandas as pd
+from datetime import datetime
 from unittest.mock import patch, MagicMock
 
 from src.engine.nav_estimator import (
@@ -119,11 +120,12 @@ class TestEstimateFundNav:
         mock_crud.get_latest_holdings.return_value = MOCK_HOLDINGS
         mock_crud.get_fund.return_value = MOCK_FUND_INFO
         mock_crud.insert_estimate.return_value = True
-        
+
         # Mock AsyncRealtimeProvider
         mock_instance = MagicMock()
         mock_provider_cls.get_instance.return_value = mock_instance
-        
+        mock_instance.last_update_time = datetime.now()  # Mock 缓存更新时间
+
         def get_quote_side_effect(code):
             # MOCK_QUOTES_DF: 000001(+2.0), 600519(-1.0), 300750(+3.0)
             data = {
@@ -132,7 +134,7 @@ class TestEstimateFundNav:
                 "300750": {"change_percent": 3.0}
             }
             return data.get(code)
-            
+
         mock_instance.get_cached_quote.side_effect = get_quote_side_effect
 
         result = estimate_fund_nav("000001")

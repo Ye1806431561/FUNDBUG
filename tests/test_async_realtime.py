@@ -9,7 +9,6 @@ from src.data.realtime import AsyncRealtimeProvider
 def provider():
     # Reset singleton for each test
     AsyncRealtimeProvider._instance = None
-    AsyncRealtimeProvider._init_done = False
     p = AsyncRealtimeProvider.get_instance()
     yield p
     p.stop()
@@ -25,47 +24,47 @@ def test_initial_state(provider):
     assert provider._background_task is None
 
 def test_start_stop(provider):
-    # This involves async loop management, tricky in sync test without async runner
-    # We mock _fetch_worker to just return (be efficient)
-    
-    async def mock_worker():
-        pass
-        
-    with patch.object(provider, '_fetch_worker', side_effect=mock_worker):
-        # We need a loop to run create_task
-        # But provider.start() calls asyncio.get_running_loop()
-        # So we must run this inside asyncio.run
-        
-        async def run_test():
-            # Mock get_running_loop if needed or just let it use the current one
-            # create_task requires a running loop
-            provider.start() 
-            assert provider.is_running is True
-            # provider.start() uses loop.create_task. 
-            # In asyncio.run, there is a loop.
-            assert provider._background_task is not None
-            
-            provider.stop()
-            assert provider.is_running is False
-            
-        asyncio.run(run_test())
+    # 测试启动和停止逻辑（现在启动逻辑在 main.py 的 lifespan 中）
+    # 这里只测试 stop() 方法
+
+    async def run_test():
+        # 模拟启动（直接设置状态）
+        loop = asyncio.get_running_loop()
+        provider._background_task = loop.create_task(asyncio.sleep(10))
+        provider.is_running = True
+
+        assert provider.is_running is True
+        assert provider._background_task is not None
+
+        # 测试停止
+        provider.stop()
+        assert provider.is_running is False
+
+    asyncio.run(run_test())
 
 def test_fetch_data_safe_success(provider):
-    # Mock ak.stock_zh_a_spot_em
-    mock_df = pd.DataFrame({
-        "代码": ["000001", "000002"],
-        "名称": ["平安银行", "万科A"],
-        "最新价": [10.5, 9.8],
-        "涨跌幅": [1.2, -0.5]
-    })
-    
-    with patch("akshare.stock_zh_a_spot_em", return_value=mock_df):
-        # _fetch_data_safe is synchronous/blocking (run in executor)
-        # So we can call it directly
+    # 设置 watchlist
+    provider.set_watchlist(["000001", "000002"])
+
+    # Mock ak.stock_bid_ask_em（新的实现使用这个方法）
+    def mock_bid_ask(symbol):
+        if symbol == "000001":
+            return pd.DataFrame({
+                "item": ["最新", "涨幅"],
+                "value": [10.5, 1.2]
+            })
+        elif symbol == "000002":
+            return pd.DataFrame({
+                "item": ["最新", "涨幅"],
+                "value": [9.8, -0.5]
+            })
+        return pd.DataFrame()
+
+    with patch("akshare.stock_bid_ask_em", side_effect=mock_bid_ask):
         df = provider._fetch_data_safe()
         assert df is not None
         assert len(df) == 2
-        assert "代码" in df.columns
+        assert "stock_code" in df.columns
 
 def test_fetch_data_safe_failure(provider):
     with patch("akshare.stock_zh_a_spot_em", side_effect=Exception("API Error")):

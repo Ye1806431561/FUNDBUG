@@ -86,10 +86,23 @@ def estimate_fund_nav(fund_code: str) -> Optional[Dict]:
     # 3. 从 AsyncRealtimeProvider 获取实时行情
     # 这里不再进行阻塞式 IO 请求，而是直接读取内存
     provider = AsyncRealtimeProvider.get_instance()
-    
+
+    # 检查缓存是否过期
+    if provider.last_update_time:
+        cache_age = (datetime.now() - provider.last_update_time).total_seconds()
+        if cache_age > 300:  # 5 分钟未更新
+            logger.warning(
+                f"⚠️ Cache is stale ({cache_age:.0f}s old). "
+                f"Possible market closure or data source failure."
+            )
+            # 可选：根据业务需求决定是否继续
+            # return None  # 严格模式：拒绝使用过期数据
+    else:
+        logger.warning("Cache has never been updated, using empty quotes")
+
     quote_map = {}
     missing_count = 0
-    
+
     for h in holdings:
         stock_code = str(h["stock_code"])
         cached = provider.get_cached_quote(stock_code)
@@ -98,12 +111,21 @@ def estimate_fund_nav(fund_code: str) -> Optional[Dict]:
         else:
             missing_count += 1
             # 缺失时默认为 0.0，不阻塞
-            
-    if missing_count > len(holdings) * 0.5:
-        # 如果超过 50% 的持仓没有行情数据，可能说明 Provider 还没准备好或者休市/数据源异常
-        # 但为了保证系统不挂，我们仍计算，只是日志警报
-        pass 
-        # logger.debug(f"Fund {fund_code}: Missing quotes for {missing_count}/{len(holdings)} stocks.")
+
+    # 改进：记录缺失股票的详细信息
+    if missing_count > 0:
+        missing_ratio = missing_count / len(holdings) * 100
+        logger.debug(
+            f"Fund {fund_code}: Missing quotes for {missing_count}/{len(holdings)} "
+            f"stocks ({missing_ratio:.1f}%)"
+        )
+
+        # 新增：如果缺失过多，发出警告
+        if missing_ratio > 50:
+            logger.warning(
+                f"Fund {fund_code}: Over 50% quotes missing! "
+                f"Estimation may be inaccurate."
+            )
 
     # 4. 计算加权涨跌幅
     weighted_return, cash_ratio = _calculate_weighted_return(holdings, quote_map)
