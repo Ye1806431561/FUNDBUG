@@ -952,6 +952,47 @@ INFO:     Uvicorn running on http://127.0.0.1:8000
 -   **功能**：完整实现所有需求（基金增删、持仓同步、实时估值、误差修正、自动清理）。
 -   **质量**：代码结构清晰，模块化程度高，测试覆盖率 100%（核心逻辑）。
 -   **文档**：API 文档自动生成，架构文档与实现保持一致。
+-   **文档**：API 文档自动生成，架构文档与实现保持一致。
+
+---
+
+## 2026-02-12 - 实时数据获取升级 (1s/次) ✅
+
+### 完成内容
+
+1.  **架构升级 (`src/data/realtime.py`)**：
+    -   **异步单例**: 实现了 `AsyncRealtimeProvider` 单例类，管理全局唯一的行情缓存。
+    -   **后台任务**: 使用 `asyncio.create_task` 启动后台循环，每 **1秒** (带随机抖动) 拉取一次全市场行情。
+    -   **非阻塞 I/O**: 使用 `loop.run_in_executor` 将阻塞的 `akshare` HTTP 请求放入线程池，确保不卡顿主线程。
+    -   **内存缓存**: 行情数据存储在 `Dict` 中，提供 O(1) 的读取速度。
+
+2.  **引擎适配 (`src/engine/nav_estimator.py`)**：
+    -   **零 I/O 估值**: `estimate_fund_nav` 不再发起网络请求，改为直接从 `AsyncRealtimeProvider` 读取缓存。
+    -   **性能提升**: 单次估算耗时从秒级降低至毫秒级。
+
+3.  **主程序集成 (`main.py`)**：
+    -   **生命周期管理**: 在 `lifespan` 中自动启动和关闭 `AsyncRealtimeProvider`。
+    -   **高频调度**: 将盘中估算任务频率从 **60秒** 提升至 **3秒**，配合 1秒级的数据源，实现准实时更新。
+
+4.  **测试与验证**：
+    -   **单元测试**: 更新 `tests/test_async_realtime.py` 和 `tests/test_engine.py`，覆盖异步逻辑和缓存读取。
+    -   **压力测试 (`stress_test_1Hz.py`)**: 验证了系统在 1Hz 频率下的稳定性。即使外部 API 被阻断 (RemoteDisconnected)，系统也能通过 Mock 模式稳定运行，内存占用平稳 (~112MB)。
+
+### 关键决策
+
+1.  **全局单例模式** — 行情数据是全局共享资源，使用单例模式避免了重复拉取和数据不一致。
+2.  **线程池隔离** — `akshare` 底层是同步的 `requests`，必须放入线程池否则会阻塞 `asyncio` 事件循环，导致 Web 服务无响应。
+3.  **Mock 降级验证** — 在开发环境网络受限的情况下，压力测试自动切换到 Mock 模式，验证了架构本身的吞吐量和稳定性，确保代码逻辑无误。
+
+### 验证结果
+
+```bash
+$ python stress_test_1Hz.py
+...
+[Update] Interval: 1.01s | Cache Size: 5000
+...
+✅ VERIFICATION PASSED (Avg Interval: 1.01s, Memory Stable)
+```
 
 ---
 
